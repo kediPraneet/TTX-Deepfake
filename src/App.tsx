@@ -8,6 +8,7 @@ import { RiskCardIcon } from './components/RiskCardIcon';
 import { assessmentStore, AssessmentData } from './lib/assessmentStore';
 import { Analytics } from './components/Analytics';
 import { io } from 'socket.io-client';
+import { fetchQuestionsByRoles, fetchGeneralQuestions, type Question as DatabaseQuestion } from './lib/api';
 
 // Add type definitions at the top of the file
 type SocketMessage = {
@@ -71,12 +72,18 @@ function App() {
   // Add new state for connected clients
   const [connectedClients, setConnectedClients] = useState<ClientInfo[]>([]);
 
+  // Add new state for user selection popup
+  const [showUserSelection, setShowUserSelection] = useState(false);
+  const [availableUsers, setAvailableUsers] = useState<any[]>([]);
+  const [selectedUser, setSelectedUser] = useState<any>(null);
+  const [isLoadingUsers, setIsLoadingUsers] = useState(false);
+  const [userSelectionError, setUserSelectionError] = useState('');
+
   const roles = [
     'CFO',
     'IT System',
     'Legal Division',
     'Marketing',
-    'Security',
     'Vendor Manager',
     'Governance and Compliance',
     'Security Incident Manager'
@@ -92,13 +99,158 @@ function App() {
     });
   };
 
-  const handleStartGenericAssessment = () => {
-    setSelectedRoles([]); // Empty array means generic assessment
-    setRoleSelectionComplete(true);
+  const handleStartGenericAssessment = async () => {
+    console.log('Starting general assessment');
+    
+    try {
+      // Fetch general questions from database
+      const questions = await fetchGeneralQuestions(5);
+      
+      if (questions.length === 0) {
+        alert('No questions found in database. Please check the database setup.');
+        return;
+      }
+
+      console.log('Fetched general questions from database:', questions);
+      
+      // Transform database questions to match current format
+      const transformedQuestions = questions.map((q: DatabaseQuestion, index: number) => ({
+        id: index + 1,
+        question: q.question,
+        scenario: q.scenario,
+        options: q.options,
+        correctAnswer: q.correctAnswer,
+        explanation: q.explanation,
+        hints: q.hints,
+        role: q.role,
+        cardTitle: q.cardTitle || 'General Assessment'
+      }));
+
+      // Set up for generic assessment using database questions
+      setCurrentRiskCardQuestions(transformedQuestions);
+      setSelectedRoles([]); // Empty array means generic assessment
+      setRoleSelectionComplete(true);
+      // Reset user selection popup state
+      setShowUserSelection(false);
+      setSelectedUser(null);
+      setUserSelectionError('');
+    } catch (error) {
+      console.error('Error starting general assessment:', error);
+      alert('Failed to load questions. Please check if the database server is running on port 3002.');
+    }
   };
 
-  const handleStartRoleBasedAssessment = () => {
-    setRoleSelectionComplete(true);
+  const handleStartRoleBasedAssessment = async () => {
+    console.log('Starting role-based assessment with roles:', selectedRoles);
+    
+    if (selectedRoles.length === 0) {
+      alert('Please select at least one role');
+      return;
+    }
+
+    try {
+      // Fetch questions from database
+      const questions = await fetchQuestionsByRoles(selectedRoles, 5);
+      
+      if (questions.length === 0) {
+        alert('No questions found for selected roles. Please try different roles.');
+        return;
+      }
+
+      console.log('Fetched questions from database:', questions);
+      
+      // Transform database questions to match current format
+      const transformedQuestions = questions.map((q: DatabaseQuestion, index: number) => ({
+        id: index + 1,
+        question: q.question,
+        scenario: q.scenario,
+        options: q.options,
+        correctAnswer: q.correctAnswer,
+        explanation: q.explanation,
+        hints: q.hints,
+        role: q.role,
+        cardTitle: q.cardTitle || 'Role-based Assessment'
+      }));
+
+      // Set up for role-based assessment using database questions
+      setCurrentRiskCardQuestions(transformedQuestions);
+      setShowUserSelection(true);
+      fetchAvailableUsers();
+    } catch (error) {
+      console.error('Error starting role-based assessment:', error);
+      alert('Failed to load questions. Please check if the database server is running on port 3002.');
+    }
+  };
+
+  // Add function to fetch users from authentication API
+  const fetchAvailableUsers = async () => {
+    console.log('Fetching users...');
+    setIsLoadingUsers(true);
+    setUserSelectionError('');
+    
+    try {
+      console.log('Fetching users from API...');
+      
+      // Fetch users from the new public endpoint
+      const response = await fetch('http://localhost:3002/api/users/available', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      const users = data.users || [];
+      
+      setAvailableUsers(users);
+      console.log('✅ Users loaded successfully:', users);
+    } catch (error) {
+      console.error('❌ Error loading users from API:', error);
+      
+      // Fallback: Use the 7 role-specific users we created
+      const fallbackUsers = [
+        { id: 9, email: 'us1@gmail.com', firstName: 'Chief Financial', lastName: 'Officer', department: 'Finance', roleLevel: 'user' },
+        { id: 10, email: 'us2@gmail.com', firstName: 'IT', lastName: 'Administrator', department: 'Information Technology', roleLevel: 'user' },
+        { id: 11, email: 'us3@gmail.com', firstName: 'Legal', lastName: 'Counsel', department: 'Legal', roleLevel: 'user' },
+        { id: 12, email: 'us4@gmail.com', firstName: 'Marketing', lastName: 'Director', department: 'Marketing', roleLevel: 'user' },
+        { id: 13, email: 'us5@gmail.com', firstName: 'Vendor', lastName: 'Coordinator', department: 'Procurement', roleLevel: 'user' },
+        { id: 14, email: 'us6@gmail.com', firstName: 'Compliance', lastName: 'Officer', department: 'Compliance', roleLevel: 'user' },
+        { id: 15, email: 'us7@gmail.com', firstName: 'Security', lastName: 'Manager', department: 'Security', roleLevel: 'user' }
+      ];
+      
+      setAvailableUsers(fallbackUsers);
+      console.log('✅ Fallback users loaded successfully');
+    } finally {
+      setIsLoadingUsers(false);
+    }
+  };
+
+  // Add function to handle user selection and proceed to assessment
+  const handleUserSelectionConfirm = () => {
+    if (selectedUser) {
+      setShowUserSelection(false);
+      setRoleSelectionComplete(true);
+      console.log('Assessment starting for user:', selectedUser.firstName, selectedUser.lastName);
+      console.log('Selected roles:', selectedRoles);
+      
+      // Register the selected user with socket for admin tracking
+      socket?.emit('register', 'client', {
+        userId: selectedUser.id,
+        userName: `${selectedUser.firstName} ${selectedUser.lastName}`,
+        userEmail: selectedUser.email
+      });
+    }
+  };
+
+  // Add function to cancel user selection
+  const handleUserSelectionCancel = () => {
+    setShowUserSelection(false);
+    setSelectedUser(null);
+    setUserSelectionError('');
   };
 
   useEffect(() => {
@@ -510,10 +662,37 @@ function App() {
     setIsLoading(true);
     console.log('Attempting admin login with:', adminCredentials);
     
-    // Simulate a small delay to show loading state
-    setTimeout(() => {
+    // Try to authenticate with the API first
+    fetch('http://localhost:3002/api/auth/login', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: adminCredentials.email,
+        password: adminCredentials.password
+      })
+    })
+    .then(response => response.json())
+    .then(data => {
+      if (data.token && (data.user.roleLevel === 'admin' || data.user.roleLevel === 'super_admin')) {
+        console.log('Admin login successful via API');
+        localStorage.setItem('admin_auth_token', data.token);
+        setIsAdmin(true);
+        setShowAdminLogin(false);
+        setAssessments(assessmentStore.getAssessments());
+        // Register socket as admin
+        console.log('Registering socket as admin:', socket?.id);
+        socket?.emit('register', 'admin');
+      } else {
+        throw new Error('Invalid credentials or insufficient permissions');
+      }
+    })
+    .catch(error => {
+      console.log('API login failed, trying hardcoded credentials:', error);
+      // Fallback to hardcoded credentials
       if (adminCredentials.email === 'admin@gmail.com' && adminCredentials.password === '123') {
-        console.log('Admin login successful');
+        console.log('Admin login successful via hardcoded credentials');
         setIsAdmin(true);
         setShowAdminLogin(false);
         setAssessments(assessmentStore.getAssessments());
@@ -524,8 +703,10 @@ function App() {
         console.log('Admin login failed');
         alert('Invalid credentials');
       }
+    })
+    .finally(() => {
       setIsLoading(false);
-    }, 500);
+    });
   };
 
   const handleAdminLogout = () => {
@@ -1114,11 +1295,165 @@ function App() {
             </div>
           </footer>
         </div>
+
+        {/* User Selection Popup - MOVED INSIDE ROLE SELECTION PAGE */}
+        <AnimatePresence>
+          {showUserSelection && (
+            <motion.section
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.3 }}
+              className="fixed inset-0 bg-black/75 flex items-center justify-center p-4 backdrop-blur-sm"
+              style={{ zIndex: 99999 }}
+              data-testid="user-selection-popup"
+            >
+              <motion.div
+                initial={{ scale: 0.9, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.9, opacity: 0 }}
+                transition={{ duration: 0.3 }}
+                className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col"
+                style={{ zIndex: 100000 }}
+              >
+                {/* Fixed Header */}
+                <div className="p-6 border-b border-slate-200 dark:border-slate-600 flex-shrink-0">
+                  <h3 className="text-2xl font-bold text-slate-900 dark:text-white text-center">
+                    Select User for Assessment
+                  </h3>
+                  <p className="text-slate-600 dark:text-slate-400 text-center mt-2">
+                    Choose which user will take the assessment for selected roles
+                  </p>
+                </div>
+
+                {/* Scrollable Content */}
+                <div className="flex-1 overflow-y-auto">
+                  <div className="p-6">
+                    {/* Selected Roles Display */}
+                    <div className="mb-6">
+                      <h4 className="text-lg font-semibold text-slate-900 dark:text-white mb-3">Selected Roles:</h4>
+                      <div className="flex flex-wrap gap-2">
+                        {selectedRoles.map((role) => (
+                          <span
+                            key={role}
+                            className="px-3 py-1 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded-full text-sm"
+                          >
+                            {role}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Loading State */}
+                    {isLoadingUsers && (
+                      <div className="text-center py-8">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto"></div>
+                        <p className="text-slate-600 dark:text-slate-400 mt-2">Loading users...</p>
+                      </div>
+                    )}
+
+                    {/* Error State */}
+                    {userSelectionError && (
+                      <div className="bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-700 rounded-lg p-4 mb-4">
+                        <p className="text-red-700 dark:text-red-300">{userSelectionError}</p>
+                        <button
+                          onClick={fetchAvailableUsers}
+                          className="mt-2 text-red-600 dark:text-red-400 hover:underline text-sm"
+                        >
+                          Try again
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Users List */}
+                    {!isLoadingUsers && !userSelectionError && (
+                      <div className="space-y-3">
+                        <h4 className="text-lg font-semibold text-slate-900 dark:text-white">Available Users:</h4>
+                        {availableUsers.length === 0 ? (
+                          <div className="text-center py-8">
+                            <Users className="h-12 w-12 text-slate-400 mx-auto mb-2" />
+                            <p className="text-slate-600 dark:text-slate-400">No users found</p>
+                          </div>
+                        ) : (
+                          <div className="grid gap-3">
+                            {availableUsers.map((user) => (
+                              <motion.div
+                                key={user.id}
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ duration: 0.2 }}
+                                onClick={() => setSelectedUser(user)}
+                                className={`p-4 rounded-lg border-2 cursor-pointer transition-all duration-300 ${
+                                  selectedUser?.id === user.id
+                                    ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/30'
+                                    : 'border-slate-200 dark:border-slate-600 hover:border-blue-300 dark:hover:border-blue-500'
+                                }`}
+                              >
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center space-x-3">
+                                    <div className="h-10 w-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center flex-shrink-0">
+                                      <span className="text-white font-semibold text-sm">
+                                        {user.firstName[0]}{user.lastName[0]}
+                                      </span>
+                                    </div>
+                                    <div className="min-w-0 flex-1">
+                                      <h5 className="font-semibold text-slate-900 dark:text-white truncate">
+                                        {user.firstName} {user.lastName}
+                                      </h5>
+                                      <p className="text-sm text-slate-600 dark:text-slate-400 truncate">
+                                        {user.email}
+                                      </p>
+                                      {user.department && (
+                                        <p className="text-xs text-slate-500 dark:text-slate-500 truncate">
+                                          {user.department}
+                                        </p>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <div className="flex-shrink-0 ml-3">
+                                    {selectedUser?.id === user.id && (
+                                      <CheckCircle className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+                                    )}
+                                  </div>
+                                </div>
+                              </motion.div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Fixed Footer */}
+                <div className="p-6 border-t border-slate-200 dark:border-slate-600 flex justify-end space-x-3 flex-shrink-0">
+                  <button
+                    onClick={handleUserSelectionCancel}
+                    className="px-4 py-2 text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleUserSelectionConfirm}
+                    disabled={!selectedUser}
+                    className={`px-6 py-2 rounded-lg font-semibold transition-all ${
+                      selectedUser
+                        ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                        : 'bg-slate-300 dark:bg-slate-600 text-slate-500 cursor-not-allowed'
+                    }`}
+                  >
+                    Start Assessment
+                  </button>
+                </div>
+              </motion.div>
+            </motion.section>
+          )}
+        </AnimatePresence>
       </div>
     );
   }
 
-  if (!isUserAuthenticated) {
+  if (!isUserAuthenticated && roleSelectionComplete && selectedRoles.length > 0) {
     return (
       <div className={`min-h-screen ${theme === 'dark' ? 'bg-gray-900 text-white' : 'bg-white'}`}>
         <GridBackgroundDemo />
@@ -1127,25 +1462,47 @@ function App() {
             onSubmit={e => {
               e.preventDefault();
               setIsUserLoading(true);
-              setTimeout(() => {
-                if (
-                  userCredentials.email === 'us@gmail.com' &&
-                  userCredentials.password === '123'
-                ) {
+              
+              // Authenticate against the API
+              fetch('http://localhost:3002/api/auth/login', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                  email: userCredentials.email,
+                  password: userCredentials.password
+                })
+              })
+              .then(response => response.json())
+              .then(data => {
+                if (data.token) {
+                  console.log('User login successful via API');
+                  localStorage.setItem('user_auth_token', data.token);
                   setIsUserAuthenticated(true);
                   setUserLoginError('');
-                  // Register socket as client
-                  console.log('Registering socket as client:', socket?.id);
-                  socket?.emit('register', 'client');
                 } else {
-                  setUserLoginError('Invalid credentials');
+                  throw new Error(data.error || 'Login failed');
                 }
+              })
+              .catch(error => {
+                console.log('User login failed:', error);
+                setUserLoginError(error.message || 'Invalid credentials');
+              })
+              .finally(() => {
                 setIsUserLoading(false);
-              }, 500);
+              });
             }}
             className="bg-slate-100/80 dark:bg-slate-800/80 backdrop-blur-sm rounded-xl p-8 shadow-lg w-full max-w-md"
           >
             <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-6 text-center">User Login</h2>
+            
+            {userLoginError && (
+              <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/30 border border-red-200 dark:border-red-700 rounded-lg">
+                <p className="text-red-700 dark:text-red-300 text-sm">{userLoginError}</p>
+              </div>
+            )}
+            
             <div className="mb-4">
               <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Email</label>
               <input
@@ -1155,9 +1512,10 @@ function App() {
                 className="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-white"
                 required
                 disabled={isUserLoading}
+                placeholder="Enter your email (us2@gmail.com or us3@gmail.com)"
               />
             </div>
-            <div className="mb-4">
+            <div className="mb-6">
               <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Password</label>
               <input
                 type="password"
@@ -1166,20 +1524,22 @@ function App() {
                 className="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-white"
                 required
                 disabled={isUserLoading}
+                placeholder="Enter password (123)"
               />
             </div>
-            {userLoginError && (
-              <div className="text-red-600 dark:text-red-400 mb-4 text-center">{userLoginError}</div>
-            )}
             <button
               type="submit"
-              className={`bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg w-full transition-all ${
-                isUserLoading ? 'opacity-50 cursor-not-allowed' : ''
-              }`}
               disabled={isUserLoading}
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition-colors disabled:opacity-50"
             >
               {isUserLoading ? 'Logging in...' : 'Login'}
             </button>
+            
+            <div className="mt-4 text-center">
+              <p className="text-sm text-slate-600 dark:text-slate-400">
+                Demo Credentials: us2@gmail.com / 123 or us3@gmail.com / 123
+              </p>
+            </div>
           </form>
         </div>
       </div>
@@ -1243,11 +1603,18 @@ function App() {
                     key={card.id}
                     className={`bg-slate-100/80 dark:bg-slate-800/80 backdrop-blur-sm p-8 rounded-xl cursor-pointer transform transition-all duration-300 hover:scale-105 ${
                       selectedCard === card.id ? 'ring-2 ring-blue-500' : ''
+                    } ${
+                      completedRiskCards.includes(card.id) ? 'ring-2 ring-green-500' : ''
                     }`}
                     onClick={() => handleCardClick(card.id)}
                     whileHover={{ y: -5 }}
                   >
-                    <div>
+                    <div className="relative">
+                      {completedRiskCards.includes(card.id) && (
+                        <div className="absolute -top-2 -right-2 bg-green-500 rounded-full p-2">
+                          <CheckCircle className="h-6 w-6 text-white" />
+                        </div>
+                      )}
                       <RiskCardIcon iconName={card.icon} className="h-12 w-12 text-red-500" />
                       <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-4">{card.title}</h3>
                       <p className="text-slate-700 dark:text-gray-300">{card.description}</p>
@@ -1268,6 +1635,12 @@ function App() {
                           ))}
                         </div>
                       </div>
+                      {completedRiskCards.includes(card.id) && (
+                        <div className="mt-4 flex items-center gap-2 text-green-600 dark:text-green-400">
+                          <CheckCircle className="h-5 w-5" />
+                          <span className="text-sm font-medium">Completed</span>
+                        </div>
+                      )}
                     </div>
                   </motion.div>
                 ))}
@@ -1299,163 +1672,162 @@ function App() {
             </div>
           </footer>
         </div>
-      </div>
 
-      <AnimatePresence>
-        {selectedCard && (
-          <motion.section
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.3 }}
-            className="fixed inset-0 bg-black/75 flex items-center justify-center p-4 z-50 backdrop-blur-sm"
-            onClick={(e) => {
-              if (e.target === e.currentTarget) {
-                setSelectedCard(null);
-              }
-            }}
-          >
-            <div 
-              className={`bg-white dark:bg-slate-800 rounded-xl overflow-y-auto shadow-2xl ${
-                showAnalytics || showFinalAnalytics ? 'w-[90%] h-[90%]' : 'w-3/4 h-3/4'
-              }`}
-              onClick={(e) => e.stopPropagation()}
+        <AnimatePresence>
+          {selectedCard && (
+            <motion.section
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.3 }}
+              className="fixed inset-0 bg-black/75 flex items-center justify-center p-4 z-50 backdrop-blur-sm"
+              onClick={(e) => {
+                if (e.target === e.currentTarget) {
+                  setSelectedCard(null);
+                }
+              }}
             >
-              <div className="p-6 md:p-8 h-full flex flex-col">
-                <button 
-                  onClick={() => {
-                    setSelectedCard(null);
-                    setShowAnalytics(false);
-                    setShowFinalAnalytics(false);
-                  }}
-                  className="mb-4 text-blue-600 dark:text-blue-400 hover:underline flex items-center text-sm"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                  </svg>
-                  Back to Risk Cards
-                </button>
-                
-                <h3 className="text-2xl font-bold mb-6 text-center text-slate-900 dark:text-white flex-shrink-0">
-                  {showFinalAnalytics ? 'Final Analytics Dashboard' : showAnalytics ? 'Analytics Dashboard' : riskCards.find(c => c.id === selectedCard)?.title + ' Assessment'}
-                </h3>
-               
-                <div className="flex-grow overflow-y-auto">
-                  {showFinalAnalytics ? (
-                    <div className="p-4">
-                      <div className="mb-8">
-                        <h4 className="text-2xl font-bold text-slate-900 dark:text-white mb-4">Risk Card Summary</h4>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          {assessments.map((assessment) => (
-                            assessment.scores.map((score) => (
-                              <div key={score.cardId} className="bg-slate-100 dark:bg-slate-700 p-4 rounded-lg">
-                                <h5 className="font-semibold text-slate-900 dark:text-white mb-2">{score.cardTitle}</h5>
-                                <div className="space-y-2">
-                                  <p className="text-slate-700 dark:text-gray-300">
-                                    Score: {score.score}/{score.maxScore}
-                                  </p>
-                                  <p className="text-slate-700 dark:text-gray-300">
-                                    Correct Answers: {score.answeredQuestions.filter(Boolean).length}/{score.answeredQuestions.length}
-                                  </p>
-                                  <p className="text-slate-700 dark:text-gray-300">
-                                    Success Rate: {Math.round((score.score / score.maxScore) * 100)}%
+              <div 
+                className={`bg-white dark:bg-slate-800 rounded-xl overflow-y-auto shadow-2xl ${
+                  showAnalytics || showFinalAnalytics ? 'w-[90%] h-[90%]' : 'w-[95%] h-[95%]'
+                }`}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="p-6 md:p-8 h-full flex flex-col">
+                  <button 
+                    onClick={() => {
+                      setSelectedCard(null);
+                      setShowAnalytics(false);
+                      setShowFinalAnalytics(false);
+                    }}
+                    className="mb-4 text-blue-600 dark:text-blue-400 hover:underline flex items-center text-sm"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                    </svg>
+                    Back to Risk Cards
+                  </button>
+                  
+                  <h3 className="text-2xl font-bold mb-6 text-center text-slate-900 dark:text-white flex-shrink-0">
+                    {showFinalAnalytics ? 'Final Analytics Dashboard' : showAnalytics ? 'Analytics Dashboard' : riskCards.find(c => c.id === selectedCard)?.title + ' Assessment'}
+                  </h3>
+                 
+                  <div className="flex-grow overflow-y-auto">
+                    {showFinalAnalytics ? (
+                      <div className="p-4">
+                        <div className="mb-8">
+                          <h4 className="text-2xl font-bold text-slate-900 dark:text-white mb-4">Risk Card Summary</h4>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {assessments.map((assessment) => (
+                              assessment.scores.map((score) => (
+                                <div key={score.cardId} className="bg-slate-100 dark:bg-slate-700 p-4 rounded-lg">
+                                  <h5 className="font-semibold text-slate-900 dark:text-white mb-2">{score.cardTitle}</h5>
+                                  <div className="space-y-2">
+                                    <p className="text-slate-700 dark:text-gray-300">
+                                      Score: {score.score}/{score.maxScore}
+                                    </p>
+                                    <p className="text-slate-700 dark:text-gray-300">
+                                      Correct Answers: {score.answeredQuestions.filter(Boolean).length}/{score.answeredQuestions.length}
+                                    </p>
+                                    <p className="text-slate-700 dark:text-gray-300">
+                                      Success Rate: {Math.round((score.score / score.maxScore) * 100)}%
+                                    </p>
+                                  </div>
+                                </div>
+                              ))
+                            ))}
+                          </div>
+                        </div>
+                        <Analytics
+                          answeredQuestions={assessments.flatMap(a => a.scores.flatMap(s => s.answeredQuestions))}
+                          hintCounts={assessments.flatMap(a => a.hintCounts || [])}
+                          currentRiskCardQuestions={
+                            assessments.flatMap(a =>
+                              a.scores.flatMap(s => {
+                                const card = riskCards.find(c => c.id === s.cardId);
+                                // Only include the questions that were actually answered (should be 5 per card)
+                                return card ? card.questions.slice(0, s.answeredQuestions.length) : [];
+                              })
+                            )
+                          }
+                          selectedRoles={
+                            // Aggregate all roles the user selected across all assessments
+                            Array.from(new Set(assessments.flatMap(a => a.selectedRoles)))
+                          }
+                          totalScore={assessments.reduce((total, a) => total + a.scores.reduce((sum, s) => sum + s.score, 0), 0)}
+                        />
+                      </div>
+                    ) : !showAnalytics ? (
+                      !getCurrentQuestion() ? (
+                        <div className="p-6 text-center text-slate-700 dark:text-gray-300">
+                          Loading question...
+                        </div>
+                      ) : showResults ? (
+                        <div className="bg-slate-100 dark:bg-slate-700 rounded-lg p-6">
+                          <h4 className="text-2xl font-bold text-slate-900 dark:text-white mb-6">Assessment Complete</h4>
+                          <div className="flex flex-col items-center justify-center space-y-6">
+                            <div className="text-center">
+                              <p className="text-lg text-slate-700 dark:text-gray-300 mb-4">
+                                You have completed the {riskCards.find(c => c.id === selectedCard)?.title.toLowerCase()} management assessment.
+                              </p>
+                              <div className="text-3xl font-bold text-indigo-600 dark:text-indigo-400 mb-4">
+                                Score: {answeredQuestions.filter(Boolean).length}/{currentRiskCardQuestions.length}
+                              </div>
+                              <div className="text-slate-700 dark:text-gray-300 mb-6">
+                                {answeredQuestions.filter(Boolean).length >= 4 ? (
+                                  <p>Excellent performance! You demonstrated strong understanding of {riskCards.find(c => c.id === selectedCard)?.title.toLowerCase()} management.</p>
+                                ) : answeredQuestions.filter(Boolean).length >= 3 ? (
+                                  <p>Good job! You showed solid knowledge of {riskCards.find(c => c.id === selectedCard)?.title.toLowerCase()} management.</p>
+                                ) : (
+                                  <p>Keep practicing! Review the {riskCards.find(c => c.id === selectedCard)?.title.toLowerCase()} management concepts to improve your understanding.</p>
+                                )}
+                              </div>
+                              {completedRiskCards.length === riskCards.length && (
+                                <div className="mt-4 p-4 bg-indigo-50 dark:bg-indigo-900/30 rounded-lg">
+                                  <p className="text-indigo-700 dark:text-indigo-300">
+                                    Congratulations! You have completed all risk card assessments. You can now view your final analytics.
                                   </p>
                                 </div>
-                              </div>
-                            ))
-                          ))}
-                        </div>
-                      </div>
-                      <Analytics
-                        answeredQuestions={assessments.flatMap(a => a.scores.flatMap(s => s.answeredQuestions))}
-                        hintCounts={assessments.flatMap(a => a.hintCounts || [])}
-                        currentRiskCardQuestions={
-                          assessments.flatMap(a =>
-                            a.scores.flatMap(s => {
-                              const card = riskCards.find(c => c.id === s.cardId);
-                              // Only include the questions that were actually answered (should be 5 per card)
-                              return card ? card.questions.slice(0, s.answeredQuestions.length) : [];
-                            })
-                          )
-                        }
-                        selectedRoles={
-                          // Aggregate all roles the user selected across all assessments
-                          Array.from(new Set(assessments.flatMap(a => a.selectedRoles)))
-                        }
-                        totalScore={assessments.reduce((total, a) => total + a.scores.reduce((sum, s) => sum + s.score, 0), 0)}
-                      />
-                    </div>
-                  ) : !showAnalytics ? (
-                    !getCurrentQuestion() ? (
-                      <div className="p-6 text-center text-slate-700 dark:text-gray-300">
-                        Loading question...
-                      </div>
-                    ) : showResults ? (
-                      <div className="bg-slate-100 dark:bg-slate-700 rounded-lg p-6">
-                        <h4 className="text-2xl font-bold text-slate-900 dark:text-white mb-6">Assessment Complete</h4>
-                        <div className="flex flex-col items-center justify-center space-y-6">
-                          <div className="text-center">
-                            <p className="text-lg text-slate-700 dark:text-gray-300 mb-4">
-                              You have completed the {riskCards.find(c => c.id === selectedCard)?.title.toLowerCase()} management assessment.
-                            </p>
-                            <div className="text-3xl font-bold text-indigo-600 dark:text-indigo-400 mb-4">
-                              Score: {answeredQuestions.filter(Boolean).length}/{currentRiskCardQuestions.length}
-                            </div>
-                            <div className="text-slate-700 dark:text-gray-300 mb-6">
-                              {answeredQuestions.filter(Boolean).length >= 4 ? (
-                                <p>Excellent performance! You demonstrated strong understanding of {riskCards.find(c => c.id === selectedCard)?.title.toLowerCase()} management.</p>
-                              ) : answeredQuestions.filter(Boolean).length >= 3 ? (
-                                <p>Good job! You showed solid knowledge of {riskCards.find(c => c.id === selectedCard)?.title.toLowerCase()} management.</p>
-                              ) : (
-                                <p>Keep practicing! Review the {riskCards.find(c => c.id === selectedCard)?.title.toLowerCase()} management concepts to improve your understanding.</p>
                               )}
                             </div>
-                            {completedRiskCards.length === riskCards.length && (
-                              <div className="mt-4 p-4 bg-indigo-50 dark:bg-indigo-900/30 rounded-lg">
-                                <p className="text-indigo-700 dark:text-indigo-300">
-                                  Congratulations! You have completed all risk card assessments. You can now view your final analytics.
-                                </p>
-                              </div>
-                            )}
-                          </div>
-                          <div className="flex justify-center space-x-4">
-                            <button
-                              onClick={() => {
-                                if (completedRiskCards.length === riskCards.length) {
-                                  setShowFinalAnalytics(true);
-                                } else {
-                                  setSelectedCard(null);
-                                  setShowResults(false);
-                                }
-                              }}
-                              className="flex items-center px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
-                            >
-                              {completedRiskCards.length === riskCards.length ? 'View Final Analytics' : 'Move to Next Risk Card'}
-                            </button>
-                            <button
-                              onClick={handleBackToRoleSelection}
-                              className="flex items-center px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
-                            >
-                              Return to Home Screen
-                            </button>
+                            <div className="flex justify-center space-x-4">
+                              <button
+                                onClick={() => {
+                                  if (completedRiskCards.length === riskCards.length) {
+                                    setShowFinalAnalytics(true);
+                                  } else {
+                                    setSelectedCard(null);
+                                    setShowResults(false);
+                                  }
+                                }}
+                                className="flex items-center px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+                              >
+                                {completedRiskCards.length === riskCards.length ? 'View Final Analytics' : 'Move to Next Risk Card'}
+                              </button>
+                              <button
+                                onClick={handleBackToRoleSelection}
+                                className="flex items-center px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+                              >
+                                Return to Home Screen
+                              </button>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    ) : (
-                      <div>
-                        {(() => {
-                          const currentQ = getCurrentQuestion();
-                          console.log('Current Question Object:', currentQ);
-                          console.log('Scenario for Current Question:', currentQ?.scenario);
-                          return null;
-                        })()}
+                      ) : (
+                        <div>
+                          {(() => {
+                            const currentQ = getCurrentQuestion();
+                            console.log('Current Question Object:', currentQ);
+                            console.log('Scenario for Current Question:', currentQ?.scenario);
+                            return null;
+                          })()}
 
-                        {getCurrentQuestion()?.scenario && (
-                           <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/30 rounded-lg border border-blue-200 dark:border-blue-700">
-                             <h5 className="text-[1.25em] font-bold text-blue-800 dark:text-blue-300 mb-1">Scenario:</h5>
-                             <p className="text-sm text-blue-700 dark:text-blue-200" dangerouslySetInnerHTML={{ __html: getCurrentQuestion()?.scenario || '' }} />
-                           </div>
-                         )}
+                          {getCurrentQuestion()?.scenario && (
+                             <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/30 rounded-lg border border-blue-200 dark:border-blue-700">
+                               <h5 className="text-[1.25em] font-bold text-blue-800 dark:text-blue-300 mb-1">Scenario:</h5>
+                               <p className="text-sm text-blue-700 dark:text-blue-200" dangerouslySetInnerHTML={{ __html: getCurrentQuestion()?.scenario || '' }} />
+                             </div>
+                           )}
 
                         <div className="mb-8">
                           <div className="flex justify-between items-center mb-4">
@@ -1574,6 +1946,7 @@ function App() {
           </motion.section>
         )}
       </AnimatePresence>
+      </div>
     </div>
   );
 }

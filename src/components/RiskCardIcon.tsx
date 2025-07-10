@@ -10,7 +10,9 @@ import {
   AlertTriangle, 
   Lock, 
   BookOpen, 
-  CheckCircle 
+  CheckCircle,
+  FileText,
+  Megaphone
 } from 'lucide-react';
 
 interface RiskCardIconProps {
@@ -29,7 +31,9 @@ const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
   AlertTriangle,
   Lock,
   BookOpen,
-  CheckCircle
+  CheckCircle,
+  FileText,
+  Megaphone
 };
 
 export const RiskCardIcon: React.FC<RiskCardIconProps> = ({ iconName, className }) => {
