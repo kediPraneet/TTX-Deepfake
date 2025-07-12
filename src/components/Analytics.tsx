@@ -29,7 +29,7 @@ interface AnalyticsProps {
   totalScore: number;
 }
 
-const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8'];
+const COLORS = ['#FF8C00', '#000000', '#FFBB28', '#FF8042', '#8884d8'];
 
 export const Analytics: React.FC<AnalyticsProps> = ({
   answeredQuestions,
@@ -116,7 +116,6 @@ export const Analytics: React.FC<AnalyticsProps> = ({
           <h3 className="text-xl font-semibold mb-2">Overall Score</h3>
           <div className="text-4xl font-bold">{Math.round(accuracy)}%</div>
           <p className="mt-2">Total Questions: {totalQuestions}</p>
-          <p className="mt-1">Total Score: {totalScore}</p>
         </div>
 
         {/* Correct vs Incorrect Distribution */}
@@ -144,19 +143,7 @@ export const Analytics: React.FC<AnalyticsProps> = ({
           </ResponsiveContainer>
         </div>
 
-        {/* Performance by Role */}
-        <div className="bg-white dark:bg-slate-700 p-4 rounded-lg shadow">
-          <h3 className="text-lg font-semibold mb-4 text-slate-900 dark:text-white">Performance by Role</h3>
-          <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={performanceByRole}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="role" />
-              <YAxis />
-              <Tooltip />
-              <Bar dataKey="score" fill="#8884d8" />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+
 
         {/* Hint Usage Chart */}
         <div className="bg-white dark:bg-slate-700 p-4 rounded-lg shadow">
