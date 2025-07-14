@@ -4,7 +4,7 @@ const path = require('path');
 const db = new sqlite3.Database(path.join(__dirname, 'assessment.db'));
 
 const vendorManagerQuestions = [
-  // Operational Disruptions (4 questions)
+  // Operational Disruptions (5 questions)
   {
     role: 'Vendor Manager',
     risk_card: 'operational',
@@ -65,8 +65,23 @@ const vendorManagerQuestions = [
     explanation: 'Multi-factor verification ensures authentic vendor communications while maintaining practical business relationships.',
     hints: ['Think about practical verification methods', 'Consider critical vs. routine communications']
   },
+  {
+    role: 'Vendor Manager',
+    risk_card: 'operational',
+    question: 'How should vendor performance metrics be adjusted during operational disruptions?',
+    scenario: '<strong style="font-size: 1.25em">Normal vendor performance metrics may not be appropriate during crisis situations. Adjusted metrics should reflect the exceptional circumstances while maintaining accountability.</strong>',
+    options: [
+      'Maintain all existing performance metrics unchanged',
+      'Adjust performance metrics to reflect crisis conditions while maintaining essential service requirements',
+      'Suspend all vendor performance evaluations',
+      'Apply stricter performance requirements to ensure reliability'
+    ],
+    correct_answer: 1,
+    explanation: 'Adjusted metrics reflect crisis realities while maintaining vendor accountability for essential services.',
+    hints: ['Think about crisis-appropriate expectations', 'Consider essential vs. non-essential services']
+  },
 
-  // Ransom Pay (4 questions)
+  // Ransom Pay (5 questions)
   {
     role: 'Vendor Manager',
     risk_card: 'ransom',
@@ -127,8 +142,23 @@ const vendorManagerQuestions = [
     explanation: 'Vendor insurance review ensures appropriate coverage and liability allocation for deepfake-related ransom scenarios.',
     hints: ['Think about comprehensive insurance coverage', 'Consider vendor vs. company liability allocation']
   },
+  {
+    role: 'Vendor Manager',
+    risk_card: 'ransom',
+    question: 'What vendor business continuity planning should be implemented for ransom scenarios?',
+    scenario: '<strong style="font-size: 1.25em">Ransom incidents may disrupt vendor operations and affect supply chain continuity. Business continuity planning should address these dependencies.</strong>',
+    options: [
+      'Assume vendors will maintain normal operations',
+      'Develop comprehensive vendor business continuity plans that address ransom scenario impacts and alternative supply options',
+      'Focus only on internal business continuity',
+      'Require vendors to handle their own continuity planning'
+    ],
+    correct_answer: 1,
+    explanation: 'Comprehensive vendor continuity planning ensures supply chain resilience during ransom incidents.',
+    hints: ['Think about supply chain dependencies', 'Consider alternative vendor options']
+  },
 
-  // Financial Loss (4 questions)
+  // Financial Loss (5 questions)
   {
     role: 'Vendor Manager',
     risk_card: 'financial',
@@ -189,8 +219,23 @@ const vendorManagerQuestions = [
     explanation: 'Comprehensive cost-effectiveness metrics enable optimization decisions that balance cost savings with service quality and relationship value.',
     hints: ['Think about comprehensive value assessment', 'Consider cost-effectiveness vs. simple cost metrics']
   },
+  {
+    role: 'Vendor Manager',
+    risk_card: 'financial',
+    question: 'How should vendor payment terms be restructured during financial recovery?',
+    scenario: '<strong style="font-size: 1.25em">Financial recovery requires optimized cash flow management. Vendor payment terms may need restructuring to balance cash flow needs with vendor relationships.</strong>',
+    options: [
+      'Extend all payment terms to maximum allowed',
+      'Negotiate strategic payment term adjustments based on vendor importance, cash flow impact, and relationship value',
+      'Maintain all existing payment terms to avoid vendor issues',
+      'Implement uniform payment term changes for all vendors'
+    ],
+    correct_answer: 1,
+    explanation: 'Strategic payment term adjustments optimize cash flow while maintaining critical vendor relationships.',
+    hints: ['Think about cash flow optimization', 'Consider vendor relationship importance']
+  },
 
-  // Regulatory Notification (3 questions)
+  // Regulatory Notification (5 questions)
   {
     role: 'Vendor Manager',
     risk_card: 'regulatory',
@@ -236,8 +281,38 @@ const vendorManagerQuestions = [
     explanation: 'Enhanced vendor reporting ensures comprehensive regulatory compliance coverage while providing necessary documentation for oversight.',
     hints: ['Think about comprehensive regulatory coverage', 'Consider practical vs. comprehensive reporting']
   },
+  {
+    role: 'Vendor Manager',
+    risk_card: 'regulatory',
+    question: 'How should vendor audit procedures be enhanced for regulatory compliance following deepfake incidents?',
+    scenario: '<strong style="font-size: 1.25em">Regulatory requirements may necessitate enhanced vendor audit procedures. Audit programs must ensure vendor compliance while being practical to implement.</strong>',
+    options: [
+      'Continue existing vendor audit procedures',
+      'Implement enhanced vendor audit procedures that specifically address deepfake risks and regulatory compliance requirements',
+      'Eliminate vendor audits to reduce regulatory complexity',
+      'Focus enhanced audits only on technology vendors'
+    ],
+    correct_answer: 1,
+    explanation: 'Enhanced vendor audits ensure regulatory compliance while addressing specific deepfake-related risks.',
+    hints: ['Think about comprehensive audit coverage', 'Consider deepfake-specific risks']
+  },
+  {
+    role: 'Vendor Manager',
+    risk_card: 'regulatory',
+    question: 'What vendor regulatory training and awareness programs should be implemented?',
+    scenario: '<strong style="font-size: 1.25em">Vendors may need training on regulatory requirements related to deepfake incidents. Training programs must be effective while being practical for vendor implementation.</strong>',
+    options: [
+      'Assume vendors understand regulatory requirements',
+      'Develop comprehensive vendor regulatory training programs that address deepfake-related compliance requirements',
+      'Require vendors to obtain their own regulatory training',
+      'Focus training only on vendors with direct regulatory exposure'
+    ],
+    correct_answer: 1,
+    explanation: 'Comprehensive vendor training ensures regulatory compliance awareness across the supply chain.',
+    hints: ['Think about supply chain compliance', 'Consider comprehensive vs. targeted training']
+  },
 
-  // Employee Notification (4 questions)
+  // Employee Notification (5 questions)
   {
     role: 'Vendor Manager',
     risk_card: 'employment',
@@ -298,8 +373,23 @@ const vendorManagerQuestions = [
     explanation: 'Risk-based background check enhancement ensures appropriate security while maintaining practical vendor relationship management.',
     hints: ['Think about risk-based security requirements', 'Consider access level and practical implementation']
   },
+  {
+    role: 'Vendor Manager',
+    risk_card: 'employment',
+    question: 'How should vendor employee incident response training be coordinated with employee notification requirements?',
+    scenario: '<strong style="font-size: 1.25em">Vendor employees may need incident response training that coordinates with employee notification procedures. Training must be practical while ensuring comprehensive coverage.</strong>',
+    options: [
+      'Assume vendor employees do not need incident response training',
+      'Coordinate comprehensive incident response training for vendor employees that aligns with employee notification requirements',
+      'Require vendor employees to complete identical training to company employees',
+      'Focus training only on vendor employees with direct customer contact'
+    ],
+    correct_answer: 1,
+    explanation: 'Coordinated incident response training ensures vendor employees understand their role in employee notification procedures.',
+    hints: ['Think about coordinated response procedures', 'Consider vendor employee roles in notifications']
+  },
 
-  // Crisis Communication (3 questions)
+  // Crisis Communication (5 questions)
   {
     role: 'Vendor Manager',
     risk_card: 'crisis',
@@ -345,8 +435,38 @@ const vendorManagerQuestions = [
     explanation: 'Transparent communication about relationship commitment maintains vendor confidence while managing expectations about operational adjustments.',
     hints: ['Think about vendor confidence and relationship continuity', 'Consider transparency vs. avoidance']
   },
+  {
+    role: 'Vendor Manager',
+    risk_card: 'crisis',
+    question: 'What vendor crisis communication protocols should be established for media interactions?',
+    scenario: '<strong style="font-size: 1.25em">Media may contact vendors for information about the crisis. Established protocols help ensure consistent messaging and protect vendor relationships.</strong>',
+    options: [
+      'Let vendors handle media interactions independently',
+      'Establish coordinated vendor crisis communication protocols that ensure consistent messaging and protect vendor relationships',
+      'Prohibit all vendor media interactions',
+      'Focus protocols only on the largest vendors'
+    ],
+    correct_answer: 1,
+    explanation: 'Coordinated vendor crisis communication protocols ensure consistent messaging while protecting vendor relationships.',
+    hints: ['Think about message consistency', 'Consider vendor relationship protection']
+  },
+  {
+    role: 'Vendor Manager',
+    risk_card: 'crisis',
+    question: 'How should vendor stakeholder communication be coordinated during crisis periods?',
+    scenario: '<strong style="font-size: 1.25em">Vendor stakeholders may need coordinated communication during crisis periods. Coordination ensures consistent messaging and maintains stakeholder confidence.</strong>',
+    options: [
+      'Assume vendors will handle their own stakeholder communications',
+      'Coordinate vendor stakeholder communication to ensure consistent messaging and maintain stakeholder confidence',
+      'Require vendors to avoid all stakeholder communications',
+      'Focus coordination only on vendors with public stakeholders'
+    ],
+    correct_answer: 1,
+    explanation: 'Coordinated vendor stakeholder communication ensures consistent messaging while maintaining stakeholder confidence.',
+    hints: ['Think about stakeholder confidence', 'Consider coordinated vs. independent communication']
+  },
 
-  // Strategic Impact (3 questions)
+  // Strategic Impact (5 questions)
   {
     role: 'Vendor Manager',
     risk_card: 'strategic',
@@ -391,6 +511,36 @@ const vendorManagerQuestions = [
     correct_answer: 1,
     explanation: 'Updated selection criteria ensure future vendors have appropriate capabilities for operating in deepfake threat environment.',
     hints: ['Think about future vendor capabilities needed', 'Consider security and resilience requirements']
+  },
+  {
+    role: 'Vendor Manager',
+    risk_card: 'strategic',
+    question: 'What strategic vendor partnership models should be developed for deepfake resilience?',
+    scenario: '<strong style="font-size: 1.25em">Traditional vendor relationships may not provide adequate deepfake resilience. Strategic partnership models may be needed for enhanced security and collaboration.</strong>',
+    options: [
+      'Maintain traditional vendor relationship models',
+      'Develop strategic vendor partnership models that enhance deepfake resilience through collaborative security measures',
+      'Focus only on transactional vendor relationships',
+      'Require all vendors to become strategic partners'
+    ],
+    correct_answer: 1,
+    explanation: 'Strategic partnership models enhance deepfake resilience through collaborative security measures and shared responsibility.',
+    hints: ['Think about collaborative security models', 'Consider partnership vs. transactional relationships']
+  },
+  {
+    role: 'Vendor Manager',
+    risk_card: 'strategic',
+    question: 'How should vendor management strategy evolve to address long-term deepfake threats?',
+    scenario: '<strong style="font-size: 1.25em">Deepfake threats are evolving and may require fundamental changes to vendor management strategy. Long-term strategic planning is essential for supply chain resilience.</strong>',
+    options: [
+      'Maintain existing vendor management strategy',
+      'Develop evolved vendor management strategy that addresses long-term deepfake threats through enhanced security, communication, and relationship models',
+      'Focus strategy only on immediate threat mitigation',
+      'Copy vendor management strategies from other industries'
+    ],
+    correct_answer: 1,
+    explanation: 'Evolved vendor management strategy addresses long-term deepfake threats through comprehensive security and relationship improvements.',
+    hints: ['Think about long-term threat evolution', 'Consider comprehensive strategy development']
   }
 ];
 

@@ -441,6 +441,172 @@ app.get('/api/admin/assessments', authenticateToken, requireAdmin, (req, res) =>
     );
 });
 
+// Admin: Get Detailed Assessment Results (with individual risk card breakdowns)
+app.get('/api/admin/assessments/:assessmentId/details', authenticateToken, requireAdmin, (req, res) => {
+    const { assessmentId } = req.params;
+
+    // Get assessment overview
+    db.get(
+        `SELECT ua.*, 
+                u.email, u.first_name, u.last_name, u.organization, u.department
+         FROM user_assessments ua
+         JOIN users u ON ua.user_id = u.id
+         WHERE ua.id = ?`,
+        [assessmentId],
+        (err, assessment) => {
+            if (err) {
+                console.error('Database error:', err);
+                return res.status(500).json({ error: 'Internal server error' });
+            }
+
+            if (!assessment) {
+                return res.status(404).json({ error: 'Assessment not found' });
+            }
+
+            // Get detailed risk card results
+            db.all(
+                `SELECT uad.*, rc.title as risk_card_title, rc.description as risk_card_description
+                 FROM user_assessment_details uad
+                 JOIN risk_cards rc ON uad.risk_card_id = rc.id
+                 WHERE uad.user_assessment_id = ?
+                 ORDER BY uad.completed_at ASC`,
+                [assessmentId],
+                (err, riskCardDetails) => {
+                    if (err) {
+                        console.error('Database error:', err);
+                        return res.status(500).json({ error: 'Internal server error' });
+                    }
+
+                    const formattedAssessment = {
+                        id: assessment.id,
+                        assessmentId: assessment.assessment_id,
+                        user: {
+                            id: assessment.user_id,
+                            email: assessment.email,
+                            firstName: assessment.first_name,
+                            lastName: assessment.last_name,
+                            organization: assessment.organization,
+                            department: assessment.department
+                        },
+                        selectedRoles: JSON.parse(assessment.selected_roles || '[]'),
+                        totalScore: assessment.total_score,
+                        maxPossibleScore: assessment.max_possible_score,
+                        timeTaken: assessment.time_taken,
+                        completedAt: assessment.completed_at,
+                        riskCardResults: riskCardDetails.map(detail => ({
+                            id: detail.id,
+                            riskCardId: detail.risk_card_id,
+                            riskCardTitle: detail.risk_card_title,
+                            riskCardDescription: detail.risk_card_description,
+                            score: detail.score,
+                            maxScore: detail.max_score,
+                            answers: JSON.parse(detail.answers || '[]'),
+                            hintsUsed: detail.hints_used,
+                            timeTaken: detail.time_taken,
+                            completedAt: detail.completed_at,
+                            successRate: Math.round((detail.score / detail.max_score) * 100)
+                        }))
+                    };
+
+                    res.json({ assessment: formattedAssessment });
+                }
+            );
+        }
+    );
+});
+
+// Admin: Get Historical Assessment Overview (all users with their risk card completions)
+app.get('/api/admin/assessments/history', authenticateToken, requireAdmin, (req, res) => {
+    db.all(
+        `SELECT ua.id as assessment_id,
+                ua.assessment_id as user_assessment_id,
+                ua.completed_at as assessment_completed_at,
+                ua.selected_roles,
+                ua.total_score,
+                ua.max_possible_score,
+                u.id as user_id,
+                u.email,
+                u.first_name,
+                u.last_name,
+                u.organization,
+                u.department,
+                uad.risk_card_id,
+                rc.title as risk_card_title,
+                uad.score as risk_card_score,
+                uad.max_score as risk_card_max_score,
+                uad.hints_used,
+                uad.completed_at as risk_card_completed_at
+         FROM user_assessments ua
+         JOIN users u ON ua.user_id = u.id
+         LEFT JOIN user_assessment_details uad ON ua.id = uad.user_assessment_id
+         LEFT JOIN risk_cards rc ON uad.risk_card_id = rc.id
+         ORDER BY ua.completed_at DESC, u.email ASC, uad.completed_at ASC`,
+        [],
+        (err, results) => {
+            if (err) {
+                console.error('Database error:', err);
+                return res.status(500).json({ error: 'Internal server error' });
+            }
+
+            // Group results by user and assessment
+            const userAssessments = {};
+            
+            results.forEach(row => {
+                const userId = row.user_id;
+                const assessmentId = row.assessment_id;
+                
+                if (!userAssessments[userId]) {
+                    userAssessments[userId] = {
+                        user: {
+                            id: userId,
+                            email: row.email,
+                            firstName: row.first_name,
+                            lastName: row.last_name,
+                            organization: row.organization,
+                            department: row.department
+                        },
+                        assessments: {}
+                    };
+                }
+                
+                if (!userAssessments[userId].assessments[assessmentId]) {
+                    userAssessments[userId].assessments[assessmentId] = {
+                        id: assessmentId,
+                        userAssessmentId: row.user_assessment_id,
+                        selectedRoles: JSON.parse(row.selected_roles || '[]'),
+                        totalScore: row.total_score,
+                        maxPossibleScore: row.max_possible_score,
+                        completedAt: row.assessment_completed_at,
+                        overallSuccessRate: Math.round((row.total_score / row.max_possible_score) * 100),
+                        riskCards: []
+                    };
+                }
+                
+                // Add risk card details if they exist
+                if (row.risk_card_id) {
+                    userAssessments[userId].assessments[assessmentId].riskCards.push({
+                        riskCardId: row.risk_card_id,
+                        riskCardTitle: row.risk_card_title,
+                        score: row.risk_card_score,
+                        maxScore: row.risk_card_max_score,
+                        hintsUsed: row.hints_used,
+                        completedAt: row.risk_card_completed_at,
+                        successRate: Math.round((row.risk_card_score / row.risk_card_max_score) * 100)
+                    });
+                }
+            });
+
+            // Convert to array format
+            const formattedHistory = Object.values(userAssessments).map(userData => ({
+                user: userData.user,
+                assessments: Object.values(userData.assessments)
+            }));
+
+            res.json({ userAssessments: formattedHistory });
+        }
+    );
+});
+
 // Admin: Get Specific User's Assessments
 app.get('/api/admin/users/:userId/assessments', authenticateToken, requireAdmin, (req, res) => {
     const { userId } = req.params;

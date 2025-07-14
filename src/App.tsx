@@ -22,6 +22,17 @@ type ClientInfo = {
   lastActivity: string;
 };
 
+type SessionRiskCardResult = {
+  cardId: string;
+  cardTitle: string;
+  totalScore: number;
+  maxScore: number;
+  answers: any[];
+  timestamp: string;
+  questions?: any[];
+  selectedAnswers?: any[];
+};
+
 function shuffleArray<T>(array: T[]): T[] {
   let currentIndex = array.length, randomIndex;
   while (currentIndex !== 0) {
@@ -39,6 +50,7 @@ function App() {
   const [selectedCard, setSelectedCard] = useState<string | null>(null);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [selectedAnswers, setSelectedAnswers] = useState<number[]>([]);
+  const [finalAnswers, setFinalAnswers] = useState<number[]>([]);
   const [showHints, setShowHints] = useState(false);
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
   const [showResults, setShowResults] = useState(false);
@@ -61,6 +73,10 @@ function App() {
   const [completedRiskCards, setCompletedRiskCards] = useState<string[]>([]);
   const [showFinalAnalytics, setShowFinalAnalytics] = useState(false);
   const [socket, setSocket] = useState<any>(null);
+  
+  // Add state variables for current session risk card results
+  const [sessionRiskCardResults, setSessionRiskCardResults] = useState<SessionRiskCardResult[]>([]);
+  const [showSessionResults, setShowSessionResults] = useState(false);
 
   // Add new state variables for admin mirroring
   const [mirroredQuestion, setMirroredQuestion] = useState<any>(null);
@@ -308,6 +324,66 @@ function App() {
             setMirroredAnswer(null);
             setMirroredHints([]);
             setMirroredResults(null);
+            
+            // Store question data for session results
+            setSessionRiskCardResults(prev => {
+              const existingIndex = prev.findIndex(result => result.cardId === message.data.cardId);
+              if (existingIndex !== -1) {
+                // Update existing result with question data
+                const newResults = [...prev];
+                if (!newResults[existingIndex].questions) {
+                  newResults[existingIndex].questions = [];
+                }
+                
+                // Add or update question data
+                const questionIndex = message.data.questionIndex;
+                newResults[existingIndex].questions![questionIndex] = {
+                  question: message.data.question.question,
+                  scenario: message.data.question.scenario,
+                  options: message.data.question.options,
+                  correctAnswer: message.data.question.correctAnswer,
+                  explanation: message.data.question.explanation
+                };
+                
+                return newResults;
+              } else {
+                // Create new result with question data
+                const getCardTitle = (cardId: string) => {
+                  const cardTitleMap: { [key: string]: string } = {
+                    'operational': 'Operational Disruptions',
+                    'ransom': 'Ransom Pay',
+                    'crisis': 'Crisis Management',
+                    'strategic': 'Strategic Planning',
+                    'governance': 'Governance Issues',
+                    'reputation': 'Reputation Management',
+                    'legal': 'Legal Complications'
+                  };
+                  return cardTitleMap[cardId] || cardId.charAt(0).toUpperCase() + cardId.slice(1);
+                };
+                
+                const newResult: SessionRiskCardResult = {
+                  cardId: message.data.cardId,
+                  cardTitle: getCardTitle(message.data.cardId),
+                  totalScore: 0,
+                  maxScore: 0,
+                  answers: [],
+                  timestamp: message.data.timestamp || new Date().toISOString(),
+                  questions: [],
+                  selectedAnswers: []
+                };
+                
+                const questionIndex = message.data.questionIndex;
+                newResult.questions![questionIndex] = {
+                  question: message.data.question.question,
+                  scenario: message.data.question.scenario,
+                  options: message.data.question.options,
+                  correctAnswer: message.data.question.correctAnswer,
+                  explanation: message.data.question.explanation
+                };
+                
+                return [...prev, newResult];
+              }
+            });
             break;
             
           case 'answer_selection':
@@ -316,6 +392,27 @@ function App() {
               selectedAnswerIndex: message.data.selectedAnswerIndex,
               selectedAnswerText: message.data.selectedAnswerText,
               questionIndex: message.data.questionIndex
+            });
+            
+            // Store answer data for session results
+            setSessionRiskCardResults(prev => {
+              const existingIndex = prev.findIndex(result => result.cardId === message.data.cardId);
+              if (existingIndex !== -1) {
+                const newResults = [...prev];
+                if (!newResults[existingIndex].selectedAnswers) {
+                  newResults[existingIndex].selectedAnswers = [];
+                }
+                
+                // Store selected answer
+                const questionIndex = message.data.questionIndex;
+                newResults[existingIndex].selectedAnswers![questionIndex] = {
+                  selectedAnswerIndex: message.data.selectedAnswerIndex,
+                  selectedAnswerText: message.data.selectedAnswerText
+                };
+                
+                return newResults;
+              }
+              return prev;
             });
             break;
             
@@ -333,6 +430,50 @@ function App() {
             
           case 'results_display':
             setMirroredResults(message.data);
+            
+            // Store the results in session storage
+            const getCardTitle = (cardId: string) => {
+              const cardTitleMap: { [key: string]: string } = {
+                'operational': 'Operational Disruptions',
+                'ransom': 'Ransom Pay',
+                'crisis': 'Crisis Management',
+                'strategic': 'Strategic Planning',
+                'governance': 'Governance Issues',
+                'reputation': 'Reputation Management',
+                'legal': 'Legal Complications'
+              };
+              return cardTitleMap[cardId] || cardId.charAt(0).toUpperCase() + cardId.slice(1);
+            };
+            
+            const resultData = {
+              cardId: message.data.cardId,
+              cardTitle: getCardTitle(message.data.cardId),
+              totalScore: message.data.totalScore,
+              maxScore: message.data.maxScore,
+              answers: message.data.answers,
+              timestamp: message.data.timestamp || new Date().toISOString()
+            };
+            
+
+            
+            setSessionRiskCardResults(prev => {
+              // Check if this risk card result already exists
+              const existingIndex = prev.findIndex(result => result.cardId === message.data.cardId);
+              if (existingIndex !== -1) {
+                // Update existing result while preserving questions and selectedAnswers
+                const newResults = [...prev];
+                const existingResult = newResults[existingIndex];
+                newResults[existingIndex] = {
+                  ...resultData,
+                  questions: existingResult.questions || [],
+                  selectedAnswers: existingResult.selectedAnswers || []
+                };
+                return newResults;
+              } else {
+                // Add new result
+                return [...prev, resultData];
+              }
+            });
             break;
         }
       });
@@ -353,6 +494,9 @@ function App() {
           }
           return [...prev, clientInfo];
         });
+        
+        // Clear session results for new client
+        setSessionRiskCardResults([]);
       });
 
       // Listen for client disconnections
@@ -381,65 +525,128 @@ function App() {
   }, [isAdmin, socket, activeClient]);
 
   const getFilteredQuestions = (card: RiskCard): Question[] => {
-    console.log(`Ignoring card theme (${card.title}). Selecting questions based ONLY on roles: ${selectedRoles.join(', ')}`);
+    console.log(`Getting questions for card: ${card.title}, selected roles: ${selectedRoles.join(', ')}`);
     
     if (selectedRoles.length === 0) {
         console.log("No roles selected, returning first 5 questions of the current card.");
         return card.questions.slice(0, 5).map(q => ({ ...q, cardTitle: card.title }));
     }
 
-    const allMatchingRoleQuestions: Question[] = [];
-    riskCards.forEach(rc => {
-        rc.questions.forEach(q => {
-            if (selectedRoles.includes(q.role)) {
-                if (!allMatchingRoleQuestions.some(existingQ => existingQ.question === q.question)) {
-                    allMatchingRoleQuestions.push({ ...q, cardTitle: rc.title });
-                }
-            }
-        });
+    // Get questions for THIS specific card that match the selected roles
+    const cardMatchingQuestions: Question[] = [];
+    card.questions.forEach(q => {
+        if (selectedRoles.includes(q.role)) {
+            cardMatchingQuestions.push({ ...q, cardTitle: card.title });
+        }
     });
 
-    console.log(`Found ${allMatchingRoleQuestions.length} total questions across all cards for selected roles.`);
+    console.log(`Found ${cardMatchingQuestions.length} questions for card "${card.title}" matching roles: ${selectedRoles.join(', ')}`);
 
-    if (allMatchingRoleQuestions.length === 0) {
-        console.log("No questions found for selected roles across all cards. Falling back to first 5 of current card.");
+    if (cardMatchingQuestions.length === 0) {
+        console.log(`No questions found for selected roles in card "${card.title}". Falling back to first 5 of current card.`);
         return card.questions.slice(0, 5).map(q => ({ ...q, cardTitle: card.title }));
     }
-    if (allMatchingRoleQuestions.length <= 5) {
-        console.log("5 or fewer total matching questions found. Using all and shuffling.");
-        return shuffleArray([...allMatchingRoleQuestions]);
+    
+    // Take exactly 5 questions for this card (shuffle if more than 5 available)
+    if (cardMatchingQuestions.length <= 5) {
+        console.log(`Using all ${cardMatchingQuestions.length} questions for card "${card.title}"`);
+        return shuffleArray([...cardMatchingQuestions]);
     }
 
-    console.log("More than 5 total matching questions found. Randomly selecting 5.");
-    const shuffledAll = shuffleArray([...allMatchingRoleQuestions]);
-    const finalSelection = shuffledAll.slice(0, 5);
-    return finalSelection;
+    console.log(`Selecting 5 questions out of ${cardMatchingQuestions.length} for card "${card.title}"`);
+    const shuffledQuestions = shuffleArray([...cardMatchingQuestions]);
+    return shuffledQuestions.slice(0, 5);
   };
 
-  const handleCardClick = (cardId: string) => {
+  const handleCardClick = async (cardId: string) => {
     console.log('Card clicked:', cardId);
     setSelectedCard(cardId);
-    const card = riskCards.find(c => c.id === cardId);
-    if (card) {
-      console.log('Found card:', card);
-      const questions = getFilteredQuestions(card);
-      setCurrentRiskCardQuestions(questions);
-      setHintCounts(new Array(questions.length).fill(0));
-      console.log('Questions set for this card:', questions.map(q => q.question));
+    
+    try {
+      // Map role names to role IDs
+      const roleIdMap: { [key: string]: number } = {
+        'CFO': 1,
+        'IT System': 2,
+        'Legal Division': 3,
+        'Marketing': 4,
+        'Vendor Manager': 5,
+        'Governance and Compliance': 6,
+        'Security Incident Manager': 7
+      };
       
-      // Emit question display event
-      socket?.emit('messageFromClient', {
-        type: 'question_display',
-        data: {
-          cardId,
-          questionIndex: 0,
-          question: questions[0],
-          timestamp: new Date().toISOString()
+      let questions: Question[] = [];
+      
+      if (selectedRoles.length > 0) {
+        // Get role ID for the first selected role (assuming single role selection for individual cards)
+        const roleId = roleIdMap[selectedRoles[0]];
+        
+        if (roleId) {
+          console.log(`Fetching questions for role: ${selectedRoles[0]} (ID: ${roleId}), card: ${cardId}`);
+          
+          // Fetch questions from database for this specific role and card
+          const response = await fetch(`http://localhost:3002/api/questions/role/${roleId}/card/${cardId}`);
+          if (response.ok) {
+            const data = await response.json();
+            console.log('Database questions:', data.questions);
+            
+            // Transform database questions to match current format
+            questions = data.questions.map((q: any, index: number) => ({
+              id: index + 1,
+              question: q.question,
+              scenario: q.scenario,
+              options: q.options,
+              correctAnswer: q.correctAnswer,
+              explanation: q.explanation,
+              hints: q.hints,
+              role: selectedRoles[0],
+              cardTitle: q.cardTitle || 'Assessment'
+            }));
+          } else {
+            console.error('Failed to fetch questions from database');
+          }
         }
-      });
+      }
+      
+      // Fallback to hardcoded questions if database fetch fails or no role selected
+      if (questions.length === 0) {
+        console.log('Falling back to hardcoded questions');
+        const card = riskCards.find(c => c.id === cardId);
+        if (card) {
+          questions = getFilteredQuestions(card);
+        }
+      }
+      
+      if (questions.length > 0) {
+        setCurrentRiskCardQuestions(questions);
+        setHintCounts(new Array(questions.length).fill(0));
+        console.log('Questions set for this card:', questions.map(q => q.question));
+        
+        // Emit question display event
+        socket?.emit('messageFromClient', {
+          type: 'question_display',
+          data: {
+            cardId,
+            questionIndex: 0,
+            question: questions[0],
+            timestamp: new Date().toISOString()
+          }
+        });
+      }
+      
+    } catch (error) {
+      console.error('Error fetching questions:', error);
+      // Fallback to hardcoded questions on error
+      const card = riskCards.find(c => c.id === cardId);
+      if (card) {
+        const questions = getFilteredQuestions(card);
+        setCurrentRiskCardQuestions(questions);
+        setHintCounts(new Array(questions.length).fill(0));
+      }
     }
+    
     setCurrentQuestionIndex(0);
     setSelectedAnswers([]);
+    setFinalAnswers([]);
     setShowHints(false);
     setShowResults(false);
     setAnsweredQuestions([]);
@@ -494,6 +701,16 @@ function App() {
     console.log('Answer selected:', answerIndex);
     setSelectedAnswers(prev => {
       const newAnswers = [...prev];
+      newAnswers[currentQuestionIndex] = answerIndex;
+      return newAnswers;
+    });
+    
+    // Also store in finalAnswers for results
+    setFinalAnswers(prev => {
+      const newAnswers = [...prev];
+      while (newAnswers.length <= currentQuestionIndex) {
+        newAnswers.push(-1); // Use -1 as "no answer"
+      }
       newAnswers[currentQuestionIndex] = answerIndex;
       return newAnswers;
     });
@@ -572,7 +789,7 @@ function App() {
           score: calculateTotalScore(),
           maxScore: 25,
           answeredQuestions,
-          selectedAnswers
+          selectedAnswers: finalAnswers
         }],
         hintCounts: hintCounts
       };
@@ -591,7 +808,7 @@ function App() {
           answers: currentRiskCardQuestions.map((q, index) => ({
             questionIndex: index,
             isCorrect: answeredQuestions[index],
-            selectedAnswer: selectedAnswers[index] !== undefined ? q.options[selectedAnswers[index]] : '',
+            selectedAnswer: finalAnswers[index] !== undefined && finalAnswers[index] !== -1 ? q.options[finalAnswers[index]] : 'No answer selected',
             correctAnswer: q.options[q.correctAnswer],
             hintsUsed: hintCounts[index] || 0
           })),
@@ -694,6 +911,8 @@ function App() {
     }
   };
 
+
+
   const fetchAdminAssessments = async (token: string) => {
     try {
       console.log('Fetching admin assessments from database...');
@@ -765,6 +984,9 @@ function App() {
         // Fetch assessments from database API
         fetchAdminAssessments(data.token);
         
+        // Initialize session results
+        setSessionRiskCardResults([]);
+        
         // Register socket as admin
         console.log('Registering socket as admin:', socket?.id);
         socket?.emit('register', 'admin');
@@ -783,6 +1005,7 @@ function App() {
         // Try to fetch assessments even with hardcoded credentials (without token)
         try {
           fetchAdminAssessments('');
+          setSessionRiskCardResults([]);
         } catch (error) {
           console.log('Could not fetch from database, using local assessments');
           setAssessments(assessmentStore.getAssessments());
@@ -807,6 +1030,8 @@ function App() {
     setShowAdminLogin(false);
     setAdminCredentials({ email: '', password: '' });
     setAssessments([]);
+    setSessionRiskCardResults([]);
+    setShowSessionResults(false);
     // Clean up socket registration
     socket?.emit('register', 'none');
   };
@@ -917,6 +1142,7 @@ function App() {
                       const token = localStorage.getItem('admin_auth_token');
                       if (token) {
                         fetchAdminAssessments(token);
+                        setSessionRiskCardResults([]);
                       } else {
                         setAssessments(assessmentStore.getAssessments());
                       }
@@ -1068,20 +1294,117 @@ function App() {
 
 
 
-              <button
-                disabled={assessments.length === 0}
-                onClick={() => {
-                  setSelectedCard('final-analytics');
-                  setShowFinalAnalytics(true);
-                }}
-                className={`mt-8 px-6 py-3 rounded-lg font-bold transition ${
-                  assessments.length === 0
-                    ? 'bg-gray-400 text-white cursor-not-allowed'
-                    : 'bg-indigo-600 text-white hover:bg-indigo-700'
-                }`}
-              >
-                Final Analytics
-              </button>
+              <div className="flex gap-4 mt-8">
+                <button
+                  disabled={assessments.length === 0}
+                  onClick={() => {
+                    setSelectedCard('final-analytics');
+                    setShowFinalAnalytics(true);
+                  }}
+                  className={`px-6 py-3 rounded-lg font-bold transition ${
+                    assessments.length === 0
+                      ? 'bg-gray-400 text-white cursor-not-allowed'
+                      : 'bg-indigo-600 text-white hover:bg-indigo-700'
+                  }`}
+                >
+                  Final Analytics
+                </button>
+                
+                <button
+                  disabled={sessionRiskCardResults.length === 0}
+                  onClick={() => setShowSessionResults(!showSessionResults)}
+                  className={`px-6 py-3 rounded-lg font-bold transition ${
+                    sessionRiskCardResults.length === 0
+                      ? 'bg-gray-400 text-white cursor-not-allowed'
+                      : 'bg-green-600 text-white hover:bg-green-700'
+                  }`}
+                >
+                  {showSessionResults ? 'Hide' : 'View'} Session Results ({sessionRiskCardResults.length})
+                </button>
+              </div>
+
+              {/* Session Results Section */}
+              {showSessionResults && (
+                <div className="mb-12">
+                  <div className="flex justify-between items-center mb-6">
+                    <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Session Results</h2>
+                    <button
+                      onClick={() => setSessionRiskCardResults([])}
+                      className="text-sm bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded-md transition"
+                    >
+                      Clear All
+                    </button>
+                  </div>
+                  <div className="space-y-6">
+                    {sessionRiskCardResults.length === 0 ? (
+                      <div className="text-center py-8">
+                        <p className="text-slate-600 dark:text-slate-400">No risk cards completed yet in this session.</p>
+                      </div>
+                    ) : (
+                      sessionRiskCardResults.map((result: any, index: number) => (
+                        <div key={index} className="bg-slate-100/80 dark:bg-slate-800/80 backdrop-blur-sm rounded-xl p-6 shadow-lg">
+                          <div className="flex justify-between items-start mb-4">
+                            <div>
+                              <h3 className="text-xl font-semibold text-slate-900 dark:text-white">
+                                {result.cardTitle}
+                              </h3>
+                              <p className="text-slate-600 dark:text-slate-400">
+                                Completed: {new Date(result.timestamp).toLocaleTimeString()}
+                              </p>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-2xl font-bold text-slate-900 dark:text-white">
+                                {Math.round((result.totalScore / result.maxScore) * 100)}%
+                              </p>
+                              <p className="text-sm text-slate-600 dark:text-slate-400">
+                                {result.totalScore}/{result.maxScore}
+                              </p>
+                            </div>
+                          </div>
+                          
+                          <div className="space-y-3">
+                            <h4 className="text-lg font-medium text-slate-900 dark:text-white">Question Results:</h4>
+                            {result.answers.map((answer: any, answerIndex: number) => {
+                              const question = result.questions?.[answerIndex];
+                              const selectedAnswer = result.selectedAnswers?.[answerIndex];
+                              return (
+                                <div key={answerIndex} className="bg-white/60 dark:bg-slate-700/60 rounded-lg p-4">
+                                  <div className="flex justify-between items-start mb-2">
+                                    <div className="flex-1">
+                                      <p className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                                        Question {answerIndex + 1}: {question?.question || 'Question not available'}
+                                      </p>
+                                      <p className="text-sm text-slate-600 dark:text-slate-400 mt-2">
+                                        Selected: {selectedAnswer?.selectedAnswerText || answer.selectedAnswer}
+                                      </p>
+                                      <p className="text-sm text-slate-500 dark:text-slate-500 mt-1">
+                                        Correct: {question?.options?.[1] || answer.correctAnswer}
+                                      </p>
+                                      {answer.hintsUsed > 0 && (
+                                        <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+                                          Hints used: {answer.hintsUsed}
+                                        </p>
+                                      )}
+                                    </div>
+                                    <div className={`text-xs px-2 py-1 rounded-full ${
+                                      answer.isCorrect ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' :
+                                      'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
+                                    }`}>
+                                      {answer.isCorrect ? 'Correct' : 'Incorrect'}
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+
+
 
               <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-6">Risk Cards1</h2>
               <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
