@@ -34,7 +34,7 @@ export const roles = [
 export const riskCards: RiskCard[] = [
   {
     id: 'operational',
-    title: 'Operational Disruptions',
+    title: 'Deepfake - Operational Disruptions',
     description: 'Managing business operations during deepfake incidents and service disruptions',
     icon: 'Building2',
     impact: 'Business Continuity',
@@ -132,7 +132,7 @@ export const riskCards: RiskCard[] = [
   },
   {
     id: 'ransom',
-    title: 'Ransom Pay',
+    title: 'Deepfake - Ransom Pay',
     description: 'Evaluating and managing extortion attempts',
     icon: 'Banknote',
     impact: 'Financial and Legal Implications',
@@ -248,7 +248,7 @@ export const riskCards: RiskCard[] = [
   },
   {
     id: 'financial',
-    title: 'Financial Loss',
+    title: 'Deepfake - Financial Loss',
     description: 'Managing financial impact and recovery costs',
     icon: 'Banknote',
     impact: 'Financial Management',
@@ -370,7 +370,7 @@ export const riskCards: RiskCard[] = [
   },
   {
     id: 'regulatory',
-    title: 'Regulatory Notification',
+    title: 'Deepfake - Regulatory Notification',
     description: 'Managing regulatory reporting and compliance requirements',
     icon: 'FileText',
     impact: 'Compliance',
@@ -408,7 +408,7 @@ export const riskCards: RiskCard[] = [
   },
   {
     id: 'employment',
-    title: 'Employee Notification',
+    title: 'Deepfake - Employee Notification',
     description: 'Managing employee communications and support',
     icon: 'Users',
     impact: 'Employee Relations',
@@ -530,7 +530,7 @@ export const riskCards: RiskCard[] = [
   },
   {
     id: 'crisis',
-    title: 'Crisis Communication',
+    title: 'Deepfake - Crisis Communication',
     description: 'Managing public relations and stakeholder communications',
     icon: 'Megaphone',
     impact: 'Reputation Management',
@@ -568,7 +568,7 @@ export const riskCards: RiskCard[] = [
   },
   {
     id: 'strategic',
-    title: 'Strategic Impact',
+    title: 'Deepfake - Strategic Impact',
     description: 'Evaluating long-term business impact and recovery',
     icon: 'Target',
     impact: 'Business Strategy',

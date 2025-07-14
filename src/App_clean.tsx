@@ -9,17 +9,6 @@ import { assessmentStore, AssessmentData } from './lib/assessmentStore';
 import { Analytics } from './components/Analytics';
 import { io } from 'socket.io-client';
 import { fetchQuestionsByRoles, fetchGeneralQuestions, type Question as DatabaseQuestion } from './lib/api';
-import {
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  Cell,
-} from 'recharts';
 
 // Add type definitions at the top of the file
 type SocketMessage = {
@@ -105,6 +94,13 @@ function App() {
   const [selectedUser, setSelectedUser] = useState<any>(null);
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
   const [userSelectionError, setUserSelectionError] = useState('');
+
+  // Add state variables for individual user analytics
+  const [usersWithAssessments, setUsersWithAssessments] = useState<any[]>([]);
+  const [selectedUserForAnalytics, setSelectedUserForAnalytics] = useState<any>(null);
+  const [selectedUserAssessments, setSelectedUserAssessments] = useState<AssessmentData[]>([]);
+  const [showIndividualAnalytics, setShowIndividualAnalytics] = useState(false);
+  const [isLoadingUserAnalytics, setIsLoadingUserAnalytics] = useState(false);
 
   const roles = [
     'CFO',
@@ -995,6 +991,9 @@ function App() {
         // Fetch assessments from database API
         fetchAdminAssessments(data.token);
         
+        // Fetch users with assessments for individual analytics
+        fetchUsersWithAssessments(data.token);
+        
         // Initialize session results
         setSessionRiskCardResults([]);
         
@@ -1016,6 +1015,7 @@ function App() {
         // Try to fetch assessments even with hardcoded credentials (without token)
         try {
           fetchAdminAssessments('');
+          fetchUsersWithAssessments('');
           setSessionRiskCardResults([]);
         } catch (error) {
           console.log('Could not fetch from database, using local assessments');
@@ -1043,6 +1043,11 @@ function App() {
     setAssessments([]);
     setSessionRiskCardResults([]);
     setShowSessionResults(false);
+    // Clean up individual user analytics state
+    setUsersWithAssessments([]);
+    setSelectedUserForAnalytics(null);
+    setSelectedUserAssessments([]);
+    setShowIndividualAnalytics(false);
     // Clean up socket registration
     socket?.emit('register', 'none');
   };
@@ -1057,44 +1062,105 @@ function App() {
     socket?.emit('register', 'none');
   };
 
-  // Add this inside the App component, before the existing functions
-  const createProgressChartData = () => {
-    // Define all 7 risk cards with their colors
-    const allRiskCards = [
-      { id: 'operational', title: 'Operational', color: '#FF8C00' },
-      { id: 'ransom', title: 'Ransom Pay', color: '#FF4444' },
-      { id: 'financial', title: 'Financial', color: '#32CD32' },
-      { id: 'regulatory', title: 'Regulatory', color: '#4169E1' },
-      { id: 'employment', title: 'Employee', color: '#FF69B4' },
-      { id: 'crisis', title: 'Crisis', color: '#8A2BE2' },
-      { id: 'strategic', title: 'Strategic', color: '#FF6347' }
-    ];
-
-    return allRiskCards.map(card => {
-      // Find if this risk card has been completed
-      const completedResult = sessionRiskCardResults.find(result => result.cardId === card.id);
+  // Fetch users with assessments for individual analytics
+  const fetchUsersWithAssessments = async (token: string) => {
+    try {
+      setIsLoadingUserAnalytics(true);
+      console.log('Fetching users with assessments...');
       
-      if (completedResult) {
-        // Count correct answers from the answers array
-        const correctCount = completedResult.answers.filter(answer => answer.isCorrect).length;
-        return {
-          name: card.title,
-          correct: correctCount,
-          total: 5,
-          color: card.color,
-          completed: true
-        };
+      const response = await fetch('http://localhost:3002/api/admin/assessments/history', {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log('Users with assessments fetched:', data.userAssessments);
+        
+        // Filter users who have completed at least one assessment
+        const usersWithData = data.userAssessments.filter((userData: any) => 
+          userData.assessments && userData.assessments.length > 0
+        );
+        
+        setUsersWithAssessments(usersWithData);
       } else {
-        // Risk card not completed yet
-        return {
-          name: card.title,
-          correct: 0,
-          total: 5,
-          color: '#E5E7EB', // Gray for not completed
-          completed: false
-        };
+        console.error('Failed to fetch users with assessments');
+        setUsersWithAssessments([]);
       }
-    });
+    } catch (error) {
+      console.error('Error fetching users with assessments:', error);
+      setUsersWithAssessments([]);
+    } finally {
+      setIsLoadingUserAnalytics(false);
+    }
+  };
+
+  // Fetch individual user's detailed assessment data
+  const fetchUserAssessmentDetails = async (userId: number, token: string) => {
+    try {
+      setIsLoadingUserAnalytics(true);
+      console.log('Fetching user assessment details for user:', userId);
+      
+      const response = await fetch(`http://localhost:3002/api/admin/users/${userId}/assessments`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log('User assessment details fetched:', data.assessments);
+        
+        // Transform to match AssessmentData format for Analytics component
+        const transformedAssessments: AssessmentData[] = data.assessments.map((assessment: any) => ({
+          id: assessment.id.toString(),
+          timestamp: assessment.completedAt,
+          selectedRoles: assessment.selectedRoles,
+          scores: assessment.riskCards.map((cardId: string, index: number) => ({
+            cardId: cardId,
+            cardTitle: riskCards.find(c => c.id === cardId)?.title || cardId,
+            score: assessment.riskCardScores[index] || 0,
+            maxScore: 25, // Each risk card has 5 questions worth 5 points each
+            answeredQuestions: [], // Will be populated if detailed data is available
+            selectedAnswers: []
+          })),
+          hintCounts: []
+        }));
+        
+        setSelectedUserAssessments(transformedAssessments);
+      } else {
+        console.error('Failed to fetch user assessment details');
+        setSelectedUserAssessments([]);
+      }
+    } catch (error) {
+      console.error('Error fetching user assessment details:', error);
+      setSelectedUserAssessments([]);
+    } finally {
+      setIsLoadingUserAnalytics(false);
+    }
+  };
+
+  // Handle user selection for individual analytics
+  const handleUserAnalyticsSelect = async (user: any) => {
+    setSelectedUserForAnalytics(user);
+    setShowIndividualAnalytics(true);
+    
+    const token = localStorage.getItem('admin_auth_token');
+    if (token && user.user.id) {
+      await fetchUserAssessmentDetails(user.user.id, token);
+    }
+  };
+
+  // Handle back to user list from individual analytics
+  const handleBackToUserList = () => {
+    setShowIndividualAnalytics(false);
+    setSelectedUserForAnalytics(null);
+    setSelectedUserAssessments([]);
   };
 
   if (showAdminLogin) {
@@ -1193,6 +1259,7 @@ function App() {
                       const token = localStorage.getItem('admin_auth_token');
                       if (token) {
                         fetchAdminAssessments(token);
+                        fetchUsersWithAssessments(token);
                         setSessionRiskCardResults([]);
                       } else {
                         setAssessments(assessmentStore.getAssessments());
@@ -1345,7 +1412,7 @@ function App() {
 
 
 
-              <div className="flex gap-4 mt-8">
+              <div className="flex gap-4 mt-8 flex-wrap">
                 <button
                   disabled={assessments.length === 0}
                   onClick={() => {
@@ -1372,6 +1439,22 @@ function App() {
                 >
                   {showSessionResults ? 'Hide' : 'View'} Session Results ({sessionRiskCardResults.length})
                 </button>
+
+                <button
+                  disabled={usersWithAssessments.length === 0}
+                  onClick={() => {
+                    setShowIndividualAnalytics(false);
+                    setSelectedUserForAnalytics(null);
+                    // Show user list (will be handled by the conditional rendering below)
+                  }}
+                  className={`px-6 py-3 rounded-lg font-bold transition ${
+                    usersWithAssessments.length === 0
+                      ? 'bg-gray-400 text-white cursor-not-allowed'
+                      : 'bg-purple-600 text-white hover:bg-purple-700'
+                  }`}
+                >
+                  Individual User Analytics ({usersWithAssessments.length})
+                </button>
               </div>
 
               {/* Session Results Section */}
@@ -1386,47 +1469,6 @@ function App() {
                       Clear All
                     </button>
                   </div>
-
-                  {/* Progress Bar Chart */}
-                  <div className="bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm rounded-xl p-6 shadow-lg mb-6">
-                    <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">
-                      Risk Card Progress (Correct Answers)
-                    </h3>
-                    <div className="h-64">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={createProgressChartData()} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
-                          <XAxis 
-                            dataKey="name" 
-                            tick={{ fontSize: 12 }}
-                            stroke="#6B7280"
-                          />
-                          <YAxis 
-                            domain={[0, 5]} 
-                            tick={{ fontSize: 12 }}
-                            stroke="#6B7280"
-                          />
-                          <Tooltip 
-                            formatter={(value, name) => [`${value}/5`, 'Correct Answers']}
-                            labelFormatter={(label) => `${label} Risk Card`}
-                          />
-                          <Bar 
-                            dataKey="correct" 
-                            radius={[4, 4, 0, 0]}
-                          >
-                            {createProgressChartData().map((entry, index) => (
-                              <Cell key={`cell-${index}`} fill={entry.color} />
-                            ))}
-                          </Bar>
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                    <div className="mt-4 text-sm text-slate-600 dark:text-slate-400 text-center">
-                      Shows correct answers out of 5 questions per risk card. Gray bars indicate incomplete risk cards.
-                    </div>
-                  </div>
-
-                  {/* Existing detailed results */}
                   <div className="space-y-6">
                     {sessionRiskCardResults.length === 0 ? (
                       <div className="text-center py-8">
@@ -2368,11 +2410,4 @@ function App() {
               </div> 
             </div>
           </motion.section>
-        )}
-      </AnimatePresence>
-      </div>
-    </div>
-  );
-}
-
-export default App;
+        </AnimatePresence>
