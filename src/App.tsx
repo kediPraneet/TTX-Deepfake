@@ -88,6 +88,9 @@ function App() {
   // Add state variables for current session risk card results
   const [sessionRiskCardResults, setSessionRiskCardResults] = useState<SessionRiskCardResult[]>([]);
   const [showSessionResults, setShowSessionResults] = useState(false);
+  
+  // Add state to track skipped questions count
+  const [skippedQuestionsCount, setSkippedQuestionsCount] = useState(0);
 
   // Add new state variables for admin mirroring
   const [mirroredQuestion, setMirroredQuestion] = useState<any>(null);
@@ -101,7 +104,6 @@ function App() {
 
   // Add new state for user selection popup
   const [showUserSelection, setShowUserSelection] = useState(false);
-  const [availableUsers, setAvailableUsers] = useState<any[]>([]);
   const [selectedUser, setSelectedUser] = useState<any>(null);
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
   const [userSelectionError, setUserSelectionError] = useState('');
@@ -119,9 +121,11 @@ function App() {
   const handleRoleSelect = (role: string) => {
     setSelectedRoles(prev => {
       if (prev.includes(role)) {
-        return prev.filter(r => r !== role);
+        // If clicking the same role, deselect it
+        return [];
       } else {
-        return [...prev, role];
+        // If clicking a different role, select only that role
+        return [role];
       }
     });
   };
@@ -201,58 +205,41 @@ function App() {
 
       // Set up for role-based assessment using database questions
       setCurrentRiskCardQuestions(transformedQuestions);
-      setShowUserSelection(true);
-      fetchAvailableUsers();
+      
+      // **NEW: Direct role-to-user mapping**
+      const roleToUserMapping = {
+        'CFO': { id: 9, email: 'us1@gmail.com', firstName: 'Chief Financial', lastName: 'Officer', department: 'Finance', roleLevel: 'user' },
+        'IT System': { id: 10, email: 'us2@gmail.com', firstName: 'IT', lastName: 'Administrator', department: 'Information Technology', roleLevel: 'user' },
+        'Legal Division': { id: 11, email: 'us3@gmail.com', firstName: 'Legal', lastName: 'Counsel', department: 'Legal', roleLevel: 'user' },
+        'Marketing': { id: 12, email: 'us4@gmail.com', firstName: 'Marketing', lastName: 'Director', department: 'Marketing', roleLevel: 'user' },
+        'Vendor Manager': { id: 13, email: 'us5@gmail.com', firstName: 'Vendor', lastName: 'Coordinator', department: 'Procurement', roleLevel: 'user' },
+        'Governance and Compliance': { id: 14, email: 'us6@gmail.com', firstName: 'Compliance', lastName: 'Officer', department: 'Compliance', roleLevel: 'user' },
+        'Security Incident Manager': { id: 15, email: 'us7@gmail.com', firstName: 'Security', lastName: 'Manager', department: 'Security', roleLevel: 'user' }
+      };
+
+      // **NEW: Automatically set selected user based on role**
+      const selectedRole = selectedRoles[0]; // Since we now allow only one role
+      const mappedUser = roleToUserMapping[selectedRole];
+      
+      if (mappedUser) {
+        setSelectedUser(mappedUser);
+        setRoleSelectionComplete(true);
+        console.log('Assessment starting for user:', mappedUser.firstName, mappedUser.lastName);
+        console.log('Selected roles:', selectedRoles);
+        
+        // Register the selected user with socket for admin tracking
+        socket?.emit('register', 'client', {
+          userId: mappedUser.id,
+          userName: `${mappedUser.firstName} ${mappedUser.lastName}`,
+          userEmail: mappedUser.email
+        });
+      } else {
+        alert('No user mapping found for selected role.');
+      }
+      
     } catch (error) {
       console.error('Error starting role-based assessment:', error);
       alert('Failed to load questions. Please check if the database server is running on port 3002.');
-    }
-  };
-
-  // Add function to fetch users from authentication API
-  const fetchAvailableUsers = async () => {
-    console.log('Fetching users...');
-    setIsLoadingUsers(true);
-    setUserSelectionError('');
-    
-    try {
-      console.log('Fetching users from API...');
-      
-      // Fetch users from the new public endpoint
-      const response = await fetch('http://localhost:3002/api/users/available', {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const data = await response.json();
-      const users = data.users || [];
-      
-      setAvailableUsers(users);
-      console.log('✅ Users loaded successfully:', users);
-    } catch (error) {
-      console.error('❌ Error loading users from API:', error);
-      
-      // Fallback: Use the 7 role-specific users we created
-      const fallbackUsers = [
-        { id: 9, email: 'us1@gmail.com', firstName: 'Chief Financial', lastName: 'Officer', department: 'Finance', roleLevel: 'user' },
-        { id: 10, email: 'us2@gmail.com', firstName: 'IT', lastName: 'Administrator', department: 'Information Technology', roleLevel: 'user' },
-        { id: 11, email: 'us3@gmail.com', firstName: 'Legal', lastName: 'Counsel', department: 'Legal', roleLevel: 'user' },
-        { id: 12, email: 'us4@gmail.com', firstName: 'Marketing', lastName: 'Director', department: 'Marketing', roleLevel: 'user' },
-        { id: 13, email: 'us5@gmail.com', firstName: 'Vendor', lastName: 'Coordinator', department: 'Procurement', roleLevel: 'user' },
-        { id: 14, email: 'us6@gmail.com', firstName: 'Compliance', lastName: 'Officer', department: 'Compliance', roleLevel: 'user' },
-        { id: 15, email: 'us7@gmail.com', firstName: 'Security', lastName: 'Manager', department: 'Security', roleLevel: 'user' }
-      ];
-      
-      setAvailableUsers(fallbackUsers);
-      console.log('✅ Fallback users loaded successfully');
-    } finally {
-      setIsLoadingUsers(false);
     }
   };
 
@@ -662,6 +649,7 @@ function App() {
     setShowResults(false);
     setAnsweredQuestions([]);
     setShowHint(false);
+    setSkippedQuestionsCount(0); // Reset skipped questions count for new risk card
   };
 
   const getCurrentQuestion = (): Question | undefined => {
@@ -706,6 +694,21 @@ function App() {
     return currentAnswers.reduce((total, isCorrect, index) => {
       return total + (isCorrect === true ? getQuestionScore(index) : 0);
     }, 0);
+  };
+
+  // Helper function to count answered questions (not skipped)
+  const getAnsweredQuestionsCount = (): number => {
+    return finalAnswers.filter(answer => answer !== -1 && answer !== undefined).length;
+  };
+
+  // Helper function to check if minimum questions are answered
+  const hasMinimumAnswers = (): boolean => {
+    return getAnsweredQuestionsCount() >= 3;
+  };
+
+  // Helper function to check if user can skip more questions
+  const canSkipMoreQuestions = (): boolean => {
+    return skippedQuestionsCount < 2;
   };
 
   const handleAnswerSelect = (answerIndex: number) => {
@@ -753,6 +756,124 @@ function App() {
     }
   };
 
+  const handleSkipQuestion = () => {
+    console.log('Skipping question');
+    
+    // Check if user has already skipped 2 questions
+    if (!canSkipMoreQuestions()) {
+      alert('You can only skip 2 questions maximum. You must answer at least 3 questions in each risk card.');
+      return;
+    }
+    
+    if (currentQuestionIndex < currentRiskCardQuestions.length - 1) {
+      const fromIndex = currentQuestionIndex;
+      const toIndex = currentQuestionIndex + 1;
+      setCurrentQuestionIndex(toIndex);
+      setSelectedAnswers([]);
+      setShowHint(false);
+
+      // Increment skipped questions count
+      setSkippedQuestionsCount(prev => prev + 1);
+
+      // Mark the skipped question as unanswered (false)
+      setAnsweredQuestions(prevAnswers => {
+        const newAnswers = [...prevAnswers];
+        while (newAnswers.length <= fromIndex) {
+          newAnswers.push(false);
+        }
+        newAnswers[fromIndex] = false; // Mark as incorrect/unanswered
+        return newAnswers;
+      });
+
+      // Store -1 as "skipped" in finalAnswers
+      setFinalAnswers(prev => {
+        const newAnswers = [...prev];
+        while (newAnswers.length <= fromIndex) {
+          newAnswers.push(-1);
+        }
+        newAnswers[fromIndex] = -1; // Mark as skipped
+        return newAnswers;
+      });
+
+      // Emit navigation event
+      socket?.emit('messageFromClient', {
+        type: 'navigation',
+        data: {
+          cardId: selectedCard,
+          fromQuestionIndex: fromIndex,
+          toQuestionIndex: toIndex,
+          action: 'skip',
+          timestamp: new Date().toISOString()
+        }
+      });
+
+      // Emit question display event for the new question
+      const nextQuestion = currentRiskCardQuestions[toIndex];
+      socket?.emit('messageFromClient', {
+        type: 'question_display',
+        data: {
+          cardId: selectedCard,
+          questionIndex: toIndex,
+          question: nextQuestion,
+          timestamp: new Date().toISOString()
+        }
+      });
+    } else {
+      // This is the last question - check if minimum answers are provided
+      if (!hasMinimumAnswers()) {
+        alert('You must answer at least 3 questions before completing this risk card assessment.');
+        return;
+      }
+      
+      console.log('Showing results');
+      setShowResults(true);
+      
+      // Store assessment data when completed
+      const assessmentData: AssessmentData = {
+        id: Date.now().toString(),
+        timestamp: new Date().toISOString(),
+        selectedRoles,
+        scores: [{
+          cardId: selectedCard!,
+          cardTitle: riskCards.find(c => c.id === selectedCard)?.title || '',
+          score: calculateTotalScore(),
+          maxScore: 25,
+          answeredQuestions,
+          selectedAnswers: finalAnswers
+        }],
+        hintCounts: hintCounts
+      };
+      assessmentStore.addAssessment(assessmentData);
+      
+      // Also save to database if user is authenticated
+      saveAssessmentToDatabase(assessmentData);
+
+      // Emit results display event
+      socket?.emit('messageFromClient', {
+        type: 'results_display',
+        data: {
+          cardId: selectedCard,
+          totalScore: calculateTotalScore(),
+          maxScore: 25,
+          answers: currentRiskCardQuestions.map((q, index) => ({
+            questionIndex: index,
+            isCorrect: answeredQuestions[index],
+            selectedAnswer: finalAnswers[index] !== undefined && finalAnswers[index] !== -1 ? q.options[finalAnswers[index]] : 'Skipped',
+            correctAnswer: q.options[q.correctAnswer],
+            hintsUsed: hintCounts[index] || 0
+          })),
+          timestamp: new Date().toISOString()
+        }
+      });
+
+      if (selectedCard && !completedRiskCards.includes(selectedCard)) {
+        setCompletedRiskCards(prev => [...prev, selectedCard]);
+      }
+
+      setAssessments(assessmentStore.getAssessments());
+    }
+  };
+
   const handleNextQuestion = () => {
     console.log('Moving to next question');
     if (currentQuestionIndex < currentRiskCardQuestions.length - 1) {
@@ -786,6 +907,12 @@ function App() {
         }
       });
     } else {
+      // This is the last question - check if minimum answers are provided
+      if (!hasMinimumAnswers()) {
+        alert('You must answer at least 3 questions before completing this risk card assessment.');
+        return;
+      }
+      
       console.log('Showing results');
       setShowResults(true);
       
@@ -1568,6 +1695,127 @@ function App() {
 
           <div className="pt-24 relative z-20">
             <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+              
+              {/* NEW: Scenario Component */}
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5 }}
+                className="mb-12"
+              >
+                <div className="bg-slate-100/80 dark:bg-slate-800/80 backdrop-blur-sm rounded-xl p-8 shadow-lg">
+                  <div className="text-center mb-8">
+                    <h2 className="text-3xl font-bold text-slate-900 dark:text-white mb-4">The Digital Deception Crisis</h2>
+                    <div className="w-20 h-1 bg-red-500 mx-auto mb-6"></div>
+                  </div>
+                  
+                  {/* Scenario Background */}
+                  <div className="mb-8">
+                    <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-4">Scenario Background</h3>
+                    <div className="bg-slate-200/50 dark:bg-slate-700/50 rounded-lg p-6">
+                      <p className="text-slate-700 dark:text-gray-300 leading-relaxed mb-4">
+                        <strong>GlobalTech Solutions</strong>, a publicly traded technology consulting firm, faces an unprecedented crisis when sophisticated deepfake videos featuring their CEO surface across multiple social media platforms during a critical $200 million acquisition period.
+                      </p>
+                      <p className="text-slate-700 dark:text-gray-300 leading-relaxed mb-4">
+                        Professional deepfake videos show CEO Michael Richardson announcing immediate layoffs of 2,500 employees, canceling major vendor contracts, and suggesting potential bankruptcy proceedings. The videos use footage from recent investor calls, making them highly convincing.
+                      </p>
+                      <p className="text-slate-700 dark:text-gray-300 leading-relaxed">
+                        The incident occurs during finalizing a major acquisition and preparing for an important investor conference. The timing appears deliberate, designed to maximize damage to the company's reputation, market position, and strategic initiatives.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Timeline */}
+                  <div>
+                    <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-4">Event Timeline - Monday, July 21, 2025</h3>
+                    <div className="space-y-4">
+                      
+                      <div className="bg-white/60 dark:bg-slate-700/60 rounded-lg p-4 border-l-4 border-red-500">
+                        <div className="flex items-start gap-3">
+                          <span className="bg-orange-500 text-white px-3 py-1 rounded-full text-sm font-bold">09:15 AM</span>
+                          <p className="text-slate-700 dark:text-gray-300">Deepfake video surfaces on LinkedIn showing CEO announcing 2,500 layoffs. Video receives 1,000+ views within first hour.</p>
+                        </div>
+                      </div>
+
+                      <div className="bg-white/60 dark:bg-slate-700/60 rounded-lg p-4 border-l-4 border-orange-500">
+                        <div className="flex items-start gap-3">
+                          <span className="bg-orange-500 text-white px-3 py-1 rounded-full text-sm font-bold">10:00 AM</span>
+                          <p className="text-slate-700 dark:text-gray-300">CFO receives urgent calls from investors and board members. Three major institutional investors threaten immediate divestment.</p>
+                        </div>
+                      </div>
+
+                      <div className="bg-white/60 dark:bg-slate-700/60 rounded-lg p-4 border-l-4 border-yellow-500">
+                        <div className="flex items-start gap-3">
+                          <span className="bg-orange-500 text-white px-3 py-1 rounded-full text-sm font-bold">10:45 AM</span>
+                          <p className="text-slate-700 dark:text-gray-300">IT Security confirms deepfake characteristics. CEO verified to be in meetings with no planned announcements.</p>
+                        </div>
+                      </div>
+
+                      <div className="bg-white/60 dark:bg-slate-700/60 rounded-lg p-4 border-l-4 border-red-600">
+                        <div className="flex items-start gap-3">
+                          <span className="bg-orange-500 text-white px-3 py-1 rounded-full text-sm font-bold">11:30 AM</span>
+                          <p className="text-slate-700 dark:text-gray-300">Additional deepfake videos surface on Twitter and YouTube about $50M vendor contract cancellations.</p>
+                        </div>
+                      </div>
+
+                      <div className="bg-white/60 dark:bg-slate-700/60 rounded-lg p-4 border-l-4 border-red-600">
+                        <div className="flex items-start gap-3">
+                          <span className="bg-orange-500 text-white px-3 py-1 rounded-full text-sm font-bold">12:15 PM</span>
+                          <p className="text-slate-700 dark:text-gray-300">Major vendors demand clarification. HR overwhelmed with 40+ employee calls. Teams in panic mode.</p>
+                        </div>
+                      </div>
+
+                      <div className="bg-white/60 dark:bg-slate-700/60 rounded-lg p-4 border-l-4 border-red-700">
+                        <div className="flex items-start gap-3">
+                          <span className="bg-orange-500 text-white px-3 py-1 rounded-full text-sm font-bold">01:00 PM</span>
+                          <p className="text-slate-700 dark:text-gray-300">Stock price drops 12%. Market cap loses $150 million. Panic selling begins.</p>
+                        </div>
+                      </div>
+
+                      <div className="bg-white/60 dark:bg-slate-700/60 rounded-lg p-4 border-l-4 border-red-700">
+                        <div className="flex items-start gap-3">
+                          <span className="bg-orange-500 text-white px-3 py-1 rounded-full text-sm font-bold">01:45 PM</span>
+                          <p className="text-slate-700 dark:text-gray-300">SEC sends formal inquiry about material disclosures. Regulatory investigations may follow.</p>
+                        </div>
+                      </div>
+
+                      <div className="bg-white/60 dark:bg-slate-700/60 rounded-lg p-4 border-l-4 border-red-800">
+                        <div className="flex items-start gap-3">
+                          <span className="bg-orange-500 text-white px-3 py-1 rounded-full text-sm font-bold">02:30 PM</span>
+                          <p className="text-slate-700 dark:text-gray-300">Major client threatens contract review. Three business news outlets request immediate comment.</p>
+                        </div>
+                      </div>
+
+                      <div className="bg-white/60 dark:bg-slate-700/60 rounded-lg p-4 border-l-4 border-red-900">
+                        <div className="flex items-start gap-3">
+                          <span className="bg-orange-500 text-white px-3 py-1 rounded-full text-sm font-bold">03:15 PM</span>
+                          <p className="text-slate-700 dark:text-gray-300">Employee resignations begin. $200 million acquisition target threatens deal termination.</p>
+                        </div>
+                      </div>
+
+                      <div className="bg-white/60 dark:bg-slate-700/60 rounded-lg p-4 border-l-4 border-red-900">
+                        <div className="flex items-start gap-3">
+                          <span className="bg-orange-500 text-white px-3 py-1 rounded-full text-sm font-bold">04:00 PM</span>
+                          <p className="text-slate-700 dark:text-gray-300">Multiple regulatory authorities request information. FBI cybercrime unit contacts company. Criminal charges possible.</p>
+                        </div>
+                      </div>
+
+                    </div>
+                  </div>
+
+                  {/* Call to Action */}
+                  <div className="mt-8 text-center">
+                    <div className="bg-red-50 dark:bg-red-900/30 rounded-lg p-6 border border-red-200 dark:border-red-700">
+                      <h4 className="text-lg font-semibold text-red-800 dark:text-red-200 mb-2">Crisis Response Required</h4>
+                      <p className="text-red-700 dark:text-red-300">
+                        Your organization needs immediate action across all departments. Select your role below to begin the incident response assessment.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+
+              {/* Existing "Select your Roles" section continues here */}
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -2259,6 +2507,22 @@ function App() {
                               <h4 className="text-xl text-slate-900 dark:text-white">
                                 Question {currentQuestionIndex + 1} of {currentRiskCardQuestions.length}
                               </h4>
+                              <div className="flex items-center gap-4 mt-2">
+                                <span className={`text-sm px-3 py-1 rounded-full ${
+                                  hasMinimumAnswers() 
+                                    ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
+                                    : 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400'
+                                }`}>
+                                  Answered: {getAnsweredQuestionsCount()}/3 (minimum)
+                                </span>
+                                <span className={`text-sm px-3 py-1 rounded-full ${
+                                  skippedQuestionsCount < 2
+                                    ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400'
+                                    : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
+                                }`}>
+                                  Skipped: {skippedQuestionsCount}/2 (maximum)
+                                </span>
+                              </div>
                             </div>
                             <button
                               onClick={handleHintClick}
@@ -2308,7 +2572,7 @@ function App() {
                           ))}
                         </div>
 
-                        <div className="flex justify-between">
+                        <div className="flex justify-between items-center">
                           <button
                             onClick={handlePrevQuestion}
                             disabled={currentQuestionIndex === 0}
@@ -2320,6 +2584,19 @@ function App() {
                           >
                             Previous
                           </button>
+                          
+                          <button
+                            onClick={handleSkipQuestion}
+                            disabled={!canSkipMoreQuestions()}
+                            className={`px-6 py-2 rounded-full transition-colors font-medium ${
+                              canSkipMoreQuestions()
+                                ? 'bg-yellow-500 hover:bg-yellow-600 text-white'
+                                : 'bg-gray-300 dark:bg-gray-600 cursor-not-allowed text-slate-500 dark:text-gray-400'
+                            }`}
+                          >
+                            Skip ({2 - skippedQuestionsCount} left)
+                          </button>
+                          
                           <button
                             onClick={handleNextQuestion}
                             disabled={selectedAnswers.length === 0}
